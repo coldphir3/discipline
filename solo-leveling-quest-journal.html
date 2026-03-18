@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quest Ledger - Discipline Chronicle</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --void:#04060d;
+  --deep:#070b18;
+  --panel:#0c1020;
+  --surface:#0f1428;
+  --border:#1e2d48;
+  --border-glow:#2e4272;
+  --sys-blue:#5eaeff;
+  --sys-blue-dim:#1e4a8a;
+  --sys-purple:#9c6fff;
+  --sys-purple-dim:#3d1f9a;
+  --sys-gold:#f5c842;
+  --sys-gold-dim:#8a6a10;
+  --sys-teal:#00d4aa;
+  --sys-red:#ff5570;
+  --rank-e:#9e9e9e;
+  --rank-d:#4caf50;
+  --rank-c:#42a5f5;
+  --rank-b:#ab47bc;
+  --rank-a:#ffa726;
+  --rank-s:#ef5350;
+  --rank-ss:#f5c842;
+  --rank-nat:#00d4aa;
+  --text-bright:#dce8ff;
+  --text-body:#a8bcd8;
+  --text-mid:#6a82a8;
+  --text-dim:#3a4d6a;
+}
+body{
+  background:var(--void);min-height:100vh;
+  font-family:'Cormorant Garamond',serif;overflow-x:hidden;
+  color:var(--text-bright);font-size:14px;line-height:1.5;
+}
+#starfield{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0}
+.star{position:absolute;border-radius:50%;animation:twinkle linear infinite}
+@keyframes twinkle{0%,100%{opacity:0.15}50%{opacity:0.9}}
+#runes{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0}
+.rune{position:absolute;font-family:'Cinzel',serif;font-size:20px;color:rgba(94,174,255,0.09);animation:runeFloat linear infinite;user-select:none}
+@keyframes runeFloat{0%{transform:translateY(100vh) rotate(0deg);opacity:0}5%{opacity:1}95%{opacity:0.4}100%{transform:translateY(-200px) rotate(360deg);opacity:0}}
+.sys-vignette{position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse 80% 80% at 50% 50%,transparent 40%,rgba(4,6,13,0.65) 100%)}
+#app{position:relative;z-index:1;max-width:1440px;margin:0 auto;padding:16px}
+
+/* ─── MAIN WINDOW ─── */
+.sys-window{background:linear-gradient(160deg,var(--panel) 0%,var(--deep) 100%);border:1px solid var(--border-glow);box-shadow:0 0 0 1px var(--border),0 0 40px rgba(94,174,255,0.05),inset 0 1px 0 rgba(94,174,255,0.08);padding:20px;min-height:calc(100vh - 32px);position:relative}
+.sys-window::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--sys-blue),var(--sys-purple),transparent)}
+.sys-window::after{content:'THE DISCIPLINE CHRONICLE  ·  QUEST LEDGER';position:absolute;top:7px;left:50%;transform:translateX(-50%);font-family:'Cinzel',serif;font-size:9px;font-weight:600;color:var(--text-dim);letter-spacing:0.28em;white-space:nowrap}
+
+/* ─── NAV ─── */
+.nav-tabs{display:flex;gap:1px;margin:28px 0 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.tab-btn{font-family:'Cinzel',serif;font-size:10px;font-weight:700;letter-spacing:0.15em;padding:9px 16px;border:1px solid transparent;border-bottom:none;background:transparent;color:var(--text-mid);cursor:pointer;transition:all 0.2s;text-transform:uppercase;position:relative}
+.tab-btn:hover{color:var(--sys-blue);border-color:var(--border)}
+.tab-btn.active{background:rgba(94,174,255,0.07);color:var(--sys-blue);border-color:var(--border-glow);border-bottom-color:var(--panel);box-shadow:0 0 14px rgba(94,174,255,0.1)}
+.tab-btn.active::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--sys-blue),transparent)}
+.page-content{display:none}.page-content.active{display:block}
+
+/* ─── SPREAD ─── */
+.book-spread{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+@media(max-width:900px){.book-spread{grid-template-columns:1fr}}
+.book-page{background:rgba(7,11,24,0.75);border:1px solid var(--border);padding:22px;min-height:600px;position:relative}
+.book-page::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,var(--sys-blue),transparent);opacity:0.35}
+.book-page::after{content:'';position:absolute;bottom:0;right:0;width:25%;height:1px;background:linear-gradient(90deg,transparent,var(--sys-purple));opacity:0.25}
+
+/* ─── PAGE TITLE ─── */
+.page-title{font-family:'Cinzel',serif;font-size:12px;font-weight:700;color:var(--sys-blue);letter-spacing:0.22em;text-transform:uppercase;border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.page-title-icon{width:18px;height:18px;border:1px solid var(--sys-blue);display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--sys-blue);flex-shrink:0}
+
+/* ─── SYSTEM NOTIFICATION ─── */
+.sys-issued{border:1px solid var(--sys-blue-dim);background:rgba(94,174,255,0.04);padding:10px 14px;margin-bottom:14px;position:relative;font-family:'Inter',sans-serif;font-size:12px;color:var(--text-body);letter-spacing:0.01em;text-align:center}
+.sys-issued::before{content:'THE SYSTEM';position:absolute;top:-7px;left:50%;transform:translateX(-50%);background:var(--panel);padding:0 8px;font-family:'Cinzel',serif;font-size:8px;letter-spacing:0.25em;color:var(--text-dim)}
+
+/* ─── QUEST CARDS ─── */
+.quest-card{background:rgba(12,16,32,0.9);border:1px solid var(--border);border-left:3px solid var(--border-glow);padding:14px 16px;margin-bottom:8px;position:relative;cursor:pointer;transition:all 0.18s}
+.quest-card:hover{border-color:var(--sys-blue-dim);border-left-color:var(--sys-blue);box-shadow:0 0 16px rgba(94,174,255,0.07),inset 0 0 20px rgba(94,174,255,0.02);transform:translateX(2px)}
+.quest-card.health{border-left-color:var(--sys-red)}
+.quest-card.intelligence{border-left-color:var(--sys-blue)}
+.quest-card.money{border-left-color:var(--sys-gold)}
+.quest-card.relationships{border-left-color:var(--sys-purple)}
+.quest-title{font-family:'Inter',sans-serif;font-size:14px;font-weight:600;color:var(--text-bright)}
+.quest-meta{font-size:12px;color:var(--text-body);margin-top:5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.quest-cat-badge{font-size:10px;padding:2px 8px;border:1px solid;font-family:'Cinzel',serif;font-weight:700;letter-spacing:0.08em;text-transform:uppercase}
+.cat-health{background:rgba(255,85,112,0.1);color:var(--sys-red);border-color:var(--sys-red)}
+.cat-intelligence{background:rgba(94,174,255,0.08);color:var(--sys-blue);border-color:var(--sys-blue)}
+.cat-money{background:rgba(245,200,66,0.08);color:var(--sys-gold);border-color:var(--sys-gold)}
+.cat-relationships{background:rgba(156,111,255,0.1);color:var(--sys-purple);border-color:var(--sys-purple)}
+.rank-badge{position:absolute;top:8px;right:10px;font-family:'Cinzel',serif;font-size:9px;font-weight:900;padding:2px 8px;border:1px solid;letter-spacing:0.15em}
+.rank-urgent{background:rgba(255,85,112,0.15);color:var(--sys-red);border-color:var(--sys-red);animation:urgentBlink 1.2s infinite alternate}
+@keyframes urgentBlink{from{box-shadow:none}to{box-shadow:0 0 8px var(--sys-red)}}
+.due-label{font-size:11px;color:var(--sys-red);font-family:'Inter',sans-serif;font-weight:500;margin-top:4px}
+.quest-desc{font-size:12px;color:var(--text-mid);margin-top:5px;font-style:italic;line-height:1.5}
+
+/* ─── CHARACTER ─── */
+.stat-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.stat-box{background:rgba(10,15,30,0.8);border:1px solid var(--border);padding:14px;text-align:center;position:relative;transition:border-color 0.2s}
+.stat-box:hover{border-color:var(--sys-blue-dim)}
+.stat-box::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--sys-blue-dim),transparent)}
+.stat-icon{font-size:20px;display:block;margin-bottom:5px}
+.stat-name{font-family:'Cinzel',serif;font-size:9px;font-weight:700;color:var(--text-mid);letter-spacing:0.2em;text-transform:uppercase;margin-bottom:4px}
+.stat-val{font-family:'Orbitron',monospace;font-size:26px;font-weight:700;color:var(--sys-blue);text-shadow:0 0 14px rgba(94,174,255,0.35)}
+.stat-bar{height:3px;background:rgba(255,255,255,0.04);margin-top:8px;overflow:hidden}
+.stat-fill{height:100%;transition:width 0.6s}
+.bar-health{background:var(--sys-red);box-shadow:0 0 6px var(--sys-red)}
+.bar-wisdom{background:var(--sys-blue);box-shadow:0 0 6px var(--sys-blue)}
+.bar-fortune{background:var(--sys-gold);box-shadow:0 0 6px var(--sys-gold)}
+.bar-charisma{background:var(--sys-purple);box-shadow:0 0 6px var(--sys-purple)}
+.xp-bar-wrap{margin:14px 0}
+.xp-label{display:flex;justify-content:space-between;font-family:'Cinzel',serif;font-size:9px;font-weight:600;color:var(--text-mid);margin-bottom:5px;letter-spacing:0.15em;text-transform:uppercase}
+.xp-bar{height:12px;background:rgba(0,0,0,0.6);border:1px solid var(--border);overflow:hidden}
+.xp-fill{height:100%;background:linear-gradient(90deg,var(--sys-blue-dim),var(--sys-blue),var(--sys-purple));transition:width 0.6s;position:relative}
+.xp-fill::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:repeating-linear-gradient(90deg,transparent,transparent 6px,rgba(255,255,255,0.05) 6px,rgba(255,255,255,0.05) 7px)}
+.level-label{font-family:'Cinzel',serif;font-size:10px;font-weight:700;color:var(--text-mid);letter-spacing:0.35em;text-align:center;text-transform:uppercase;margin-bottom:4px}
+.level-num{font-family:'Orbitron',monospace;font-size:44px;font-weight:900;color:var(--sys-gold);text-shadow:0 0 22px rgba(245,200,66,0.55),0 0 44px rgba(245,200,66,0.2);text-align:center;line-height:1;margin-bottom:4px}
+.hunter-rank-row{text-align:center;margin-bottom:14px}
+.hp-mp-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.hp-box{background:rgba(255,85,112,0.05);border:1px solid rgba(255,85,112,0.25);padding:10px;text-align:center}
+.mp-box{background:rgba(94,174,255,0.05);border:1px solid rgba(94,174,255,0.25);padding:10px;text-align:center}
+.resource-label{font-family:'Cinzel',serif;font-size:9px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;display:block;margin-bottom:3px}
+.resource-val{font-family:'Orbitron',monospace;font-size:17px;font-weight:700}
+
+/* ─── BUTTONS ─── */
+.btn-parch{font-family:'Cinzel',serif;font-size:11px;font-weight:600;background:transparent;border:1px solid var(--border-glow);color:var(--text-body);padding:8px 18px;cursor:pointer;letter-spacing:0.12em;text-transform:uppercase;transition:all 0.18s}
+.btn-parch:hover{border-color:var(--sys-blue);color:var(--sys-blue);box-shadow:0 0 8px rgba(94,174,255,0.12)}
+.btn-gold{font-family:'Cinzel',serif;font-size:11px;font-weight:700;background:rgba(245,200,66,0.08);border:1px solid var(--sys-gold);color:var(--sys-gold);padding:8px 18px;cursor:pointer;letter-spacing:0.12em;text-transform:uppercase;transition:all 0.18s;box-shadow:0 0 8px rgba(245,200,66,0.08)}
+.btn-gold:hover{background:rgba(245,200,66,0.15);box-shadow:0 0 18px rgba(245,200,66,0.22)}
+.btn-red{font-family:'Cinzel',serif;font-size:10px;font-weight:600;background:transparent;border:1px solid rgba(255,85,112,0.35);color:var(--sys-red);padding:4px 10px;cursor:pointer;letter-spacing:0.08em;text-transform:uppercase;transition:all 0.15s;opacity:0.75}
+.btn-red:hover{background:rgba(255,85,112,0.1);border-color:var(--sys-red);opacity:1}
+.btn-complete{font-family:'Cinzel',serif;font-size:10px;font-weight:700;background:rgba(245,200,66,0.08);border:1px solid var(--sys-gold);color:var(--sys-gold);padding:5px 14px;cursor:pointer;letter-spacing:0.1em;text-transform:uppercase;transition:all 0.15s}
+.btn-complete:hover{background:rgba(245,200,66,0.15);box-shadow:0 0 10px rgba(245,200,66,0.2)}
+
+/* ─── MODAL ─── */
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(4,6,13,0.93);z-index:1000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.modal-parch{background:linear-gradient(145deg,var(--panel),var(--deep));border:1px solid var(--border-glow);box-shadow:0 0 0 1px var(--border),0 0 44px rgba(94,174,255,0.1),0 0 80px rgba(156,111,255,0.05);padding:28px;max-width:520px;width:90%;max-height:85vh;overflow-y:auto;position:relative}
+.modal-parch::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--sys-blue),var(--sys-purple),transparent)}
+.modal-title{font-family:'Cinzel',serif;font-size:13px;font-weight:700;color:var(--sys-gold);text-align:center;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:12px;letter-spacing:0.2em;text-transform:uppercase}
+.form-group{margin-bottom:14px}
+.form-label{display:block;font-family:'Cinzel',serif;font-size:9px;font-weight:700;color:var(--text-mid);letter-spacing:0.22em;text-transform:uppercase;margin-bottom:5px}
+.form-input,.form-select,.form-textarea{width:100%;padding:9px 12px;background:rgba(0,0,0,0.45);border:1px solid var(--border);font-family:'Inter',sans-serif;font-size:13px;color:var(--text-bright);outline:none;transition:border-color 0.15s}
+.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--sys-blue-dim);box-shadow:0 0 8px rgba(94,174,255,0.1)}
+.form-input::placeholder,.form-textarea::placeholder{color:var(--text-dim)}
+.form-select option{background:#0c1020;color:var(--text-bright)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-actions{display:flex;gap:10px;justify-content:center;margin-top:22px}
+
+/* ─── REWARD OVERLAY ─── */
+#reward-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(4,6,13,0.97);z-index:2000;display:flex;align-items:center;justify-content:center;flex-direction:column}
+#reward-overlay::before{content:'';position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse 60% 60% at 50% 50%,rgba(156,111,255,0.06) 0%,transparent 70%);pointer-events:none}
+.chest-container{text-align:center;padding:40px;position:relative;z-index:1}
+.chest-emoji{font-size:72px;display:block;margin-bottom:12px;animation:chestShake 0.5s 1s ease-in-out 3}
+@keyframes chestShake{0%,100%{transform:scale(1) rotate(0)}25%{transform:scale(1.05) rotate(-3deg)}75%{transform:scale(1.05) rotate(3deg)}}
+.tier-banner{font-family:'Cinzel',serif;font-size:19px;font-weight:900;margin:12px 0;letter-spacing:0.3em;text-transform:uppercase;animation:tierPulse 0.9s infinite alternate}
+@keyframes tierPulse{from{opacity:0.5}to{opacity:1;text-shadow:0 0 22px currentColor,0 0 44px currentColor}}
+.tier-common{color:#78909c}.tier-uncommon{color:#66bb6a}.tier-rare{color:var(--sys-blue)}.tier-epic{color:var(--sys-purple)}.tier-legendary{color:var(--sys-gold)}
+.reward-text{font-family:'Inter',sans-serif;font-size:22px;font-weight:500;color:var(--text-bright);max-width:400px;text-align:center;margin:16px 0}
+.reward-xp{font-family:'Cinzel',serif;font-size:11px;color:var(--sys-blue);margin-bottom:20px;letter-spacing:0.2em;text-transform:uppercase}
+
+/* ─── LEVEL UP ─── */
+#levelup-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(4,6,13,0.98);z-index:3000;display:flex;align-items:center;justify-content:center;flex-direction:column;pointer-events:none;overflow:hidden}
+#levelup-overlay::before{content:'';position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse 50% 50% at 50% 50%,rgba(245,200,66,0.07) 0%,transparent 60%);animation:lvlAura 0.5s ease-out forwards}
+@keyframes lvlAura{from{opacity:0;transform:scale(0.8)}to{opacity:1;transform:scale(1)}}
+.levelup-sys{font-family:'Cinzel',serif;font-size:11px;letter-spacing:0.45em;color:var(--sys-blue);text-transform:uppercase;margin-bottom:8px}
+.levelup-title{font-family:'Cinzel',serif;font-size:46px;font-weight:900;color:var(--sys-gold);letter-spacing:0.15em;text-transform:uppercase;text-shadow:0 0 32px rgba(245,200,66,0.6),0 0 64px rgba(245,200,66,0.25);animation:lvlPulse 0.6s ease-in-out infinite alternate}
+@keyframes lvlPulse{from{transform:scale(1)}to{transform:scale(1.02)}}
+.levelup-num{font-family:'Orbitron',monospace;font-size:100px;font-weight:900;color:var(--sys-gold);text-shadow:0 0 44px rgba(245,200,66,0.7),0 0 88px rgba(245,200,66,0.25);margin:4px 0;line-height:1}
+.levelup-flavor{font-family:'Inter',sans-serif;font-size:14px;font-weight:400;color:var(--text-body);max-width:500px;text-align:center;margin-top:16px}
+
+/* ─── ACHIEVEMENTS ─── */
+.trophy-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.trophy-card{background:rgba(10,15,30,0.8);border:1px solid var(--border);padding:14px;text-align:center;transition:all 0.2s;position:relative}
+.trophy-card:hover{border-color:var(--border-glow)}
+.trophy-card.unlocked{background:rgba(94,174,255,0.04);border-color:var(--sys-blue-dim);box-shadow:0 0 12px rgba(94,174,255,0.06)}
+.trophy-card.unlocked::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--sys-blue),transparent)}
+.trophy-icon{font-size:26px;display:block;margin-bottom:7px}
+.trophy-name{font-family:'Cinzel',serif;font-size:9px;font-weight:700;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;line-height:1.4}
+.trophy-desc{font-family:'Inter',sans-serif;font-size:10px;color:var(--text-mid);margin-top:4px;line-height:1.4}
+.trophy-card.unlocked .trophy-name{color:var(--sys-blue)}
+.trophy-card.locked .trophy-icon{filter:grayscale(1);opacity:0.2}
+.trophy-card.locked .trophy-desc{color:var(--text-dim)}
+
+/* ─── HEATMAP ─── */
+.heatmap-grid{display:grid;grid-template-columns:repeat(52,1fr);gap:2px;margin:8px 0}
+.heat-cell{width:100%;aspect-ratio:1}
+.heat-0{background:rgba(255,255,255,0.03)}.heat-1{background:rgba(94,174,255,0.2)}.heat-2{background:rgba(94,174,255,0.45)}.heat-3{background:rgba(94,174,255,0.75)}.heat-4{background:var(--sys-blue);box-shadow:0 0 3px var(--sys-blue)}
+
+/* ─── REWARDS ─── */
+.reward-list{display:flex;flex-direction:column;gap:6px}
+.reward-item{background:rgba(10,15,30,0.6);border:1px solid var(--border);padding:11px 14px;display:flex;align-items:center;gap:10px;transition:border-color 0.15s}
+.reward-item:hover{border-color:var(--border-glow)}
+.reward-tier-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.dot-common{background:#78909c}.dot-uncommon{background:#66bb6a}.dot-rare{background:var(--sys-blue)}.dot-epic{background:var(--sys-purple)}.dot-legendary{background:var(--sys-gold);box-shadow:0 0 6px var(--sys-gold)}
+.reward-name{font-size:13px;font-weight:500;color:var(--text-bright)}
+.reward-tier-label{font-size:10px;color:var(--text-mid);margin-top:1px;text-transform:capitalize}
+
+/* ─── FILTER BAR ─── */
+.filter-bar{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px}
+.filter-btn{font-family:'Cinzel',serif;font-size:9px;font-weight:700;padding:5px 11px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-mid);letter-spacing:0.12em;text-transform:uppercase;transition:all 0.12s}
+.filter-btn:hover{border-color:var(--border-glow);color:var(--text-body)}
+.filter-btn.active{border-color:var(--sys-blue);color:var(--sys-blue);background:rgba(94,174,255,0.06)}
+.filter-btn.active.cat-health{border-color:var(--sys-red);color:var(--sys-red);background:rgba(255,85,112,0.06)}
+.filter-btn.active.cat-money{border-color:var(--sys-gold);color:var(--sys-gold);background:rgba(245,200,66,0.05)}
+.filter-btn.active.cat-relationships{border-color:var(--sys-purple);color:var(--sys-purple);background:rgba(156,111,255,0.06)}
+
+/* ─── JOURNAL ─── */
+.journal-entry{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.04)}
+.journal-date{font-family:'Cinzel',serif;font-size:9px;color:var(--text-dim);margin-bottom:3px;letter-spacing:0.15em;text-transform:uppercase}
+.journal-text{font-size:12.5px;color:var(--text-body);line-height:1.55}
+
+/* ─── STREAK ─── */
+.streak-banner{background:rgba(245,200,66,0.04);border:1px solid rgba(245,200,66,0.18);padding:9px 16px;display:flex;align-items:center;gap:10px;margin-bottom:0;position:relative}
+.streak-banner::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,var(--sys-gold),transparent);opacity:0.4}
+.streak-fire{font-size:16px;animation:fireFlicker 0.8s infinite alternate}
+@keyframes fireFlicker{from{transform:scale(1)}to{transform:scale(1.1)}}
+.streak-text{font-family:'Cinzel',serif;font-size:12px;font-weight:700;color:var(--sys-gold);letter-spacing:0.1em}
+.streak-sub{font-family:'Inter',sans-serif;font-size:11px;color:var(--text-mid);margin-left:auto}
+
+/* ─── CLASS CARDS ─── */
+.class-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px}
+.class-card{background:rgba(10,15,30,0.8);border:1px solid var(--border);padding:14px;cursor:pointer;text-align:center;transition:all 0.18s}
+.class-card:hover,.class-card.selected{border-color:var(--sys-gold-dim);background:rgba(245,200,66,0.04);box-shadow:0 0 16px rgba(245,200,66,0.07)}
+.class-card.selected{border-color:var(--sys-gold)}
+.class-icon{font-size:26px;display:block;margin-bottom:6px}
+.class-name{font-family:'Cinzel',serif;font-size:12px;font-weight:700;color:var(--text-bright);letter-spacing:0.1em;text-transform:uppercase}
+.class-bonus{font-size:11px;color:var(--text-mid);margin-top:3px}
+
+/* ─── TALENTS ─── */
+.talent-grid{display:grid;grid-template-columns:1fr;gap:8px}
+.talent-path{background:rgba(10,15,30,0.6);border:1px solid var(--border);padding:14px;transition:all 0.18s;position:relative}
+.talent-path:hover{border-color:var(--border-glow)}
+.talent-path::before{content:'';position:absolute;top:0;left:0;width:2px;height:100%;background:var(--sys-purple);opacity:0.5}
+.talent-path-name{font-family:'Cinzel',serif;font-size:12px;font-weight:700;color:var(--sys-purple);margin-bottom:4px;letter-spacing:0.1em;text-transform:uppercase}
+.talent-desc{font-size:12px;color:var(--text-body);margin-bottom:8px;line-height:1.5}
+.talent-owned{font-family:'Orbitron',monospace;font-size:11px;color:var(--sys-gold);font-weight:700}
+
+/* ─── XP POPUP ─── */
+.xp-popup{position:fixed;pointer-events:none;z-index:5000;font-family:'Cinzel',serif;font-weight:700;font-size:15px;color:var(--sys-gold);text-shadow:0 0 12px rgba(245,200,66,0.8);letter-spacing:0.1em;animation:xpFloat 1.5s ease-out forwards}
+@keyframes xpFloat{0%{opacity:1;transform:translateY(0) scale(1)}30%{opacity:1;transform:translateY(-30px) scale(1.12)}100%{opacity:0;transform:translateY(-80px) scale(0.9)}}
+
+/* ─── MISC ─── */
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border-glow)}::-webkit-scrollbar-thumb:hover{background:var(--sys-blue-dim)}
+.sub-heading{font-family:'Cinzel',serif;font-size:9px;font-weight:700;color:var(--text-mid);margin:14px 0 7px;letter-spacing:0.22em;text-transform:uppercase;display:flex;align-items:center;gap:6px}
+.sub-heading::before{content:'▸';color:var(--sys-blue);font-size:9px}
+.empty-state{font-family:'Inter',sans-serif;font-size:13px;color:var(--text-dim);text-align:center;padding:30px 0;line-height:2.2}
+.empty-state span{color:var(--text-mid)}
+.gold-amount{font-family:'Orbitron',monospace;font-size:13px;font-weight:700;color:var(--sys-gold);text-shadow:0 0 8px rgba(245,200,66,0.3)}
+.summary-panel{background:rgba(10,15,30,0.55);border:1px solid var(--border);padding:14px 16px;margin-bottom:14px;position:relative}
+.summary-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,var(--sys-gold),transparent)}
+.summary-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}
+.summary-stat{background:rgba(0,0,0,0.18);border:1px solid rgba(255,255,255,0.06);padding:12px}
+.summary-stat-label{font-family:'Cinzel',serif;font-size:9px;letter-spacing:0.16em;text-transform:uppercase;color:var(--text-mid);margin-bottom:5px}
+.summary-stat-value{font-family:'Orbitron',monospace;font-size:22px;font-weight:700;color:var(--text-bright)}
+.summary-stat-note{font-size:12px;color:var(--text-mid);margin-top:3px}
+.summary-progress{height:12px;background:rgba(0,0,0,0.35);border:1px solid var(--border);overflow:hidden}
+.summary-progress-fill{height:100%;background:linear-gradient(90deg,var(--sys-gold-dim),var(--sys-gold),var(--sys-purple));transition:width 0.3s}
+.vitality-grid{display:grid;grid-template-columns:1.05fr 1.35fr;gap:14px;margin-top:14px}
+.vitality-page{background:rgba(7,11,24,0.75);border:1px solid var(--border);padding:22px;min-height:600px;position:relative}
+.vitality-page::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,var(--sys-gold),transparent);opacity:0.5}
+.vitality-day-list{display:grid;grid-template-columns:1fr;gap:10px}
+.vitality-day-card{background:rgba(10,15,30,0.7);border:1px solid var(--border);padding:14px;transition:all 0.18s}
+.vitality-day-card:hover{border-color:var(--border-glow);box-shadow:0 0 14px rgba(245,200,66,0.08)}
+.vitality-day-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px}
+.vitality-day-name{font-family:'Cinzel',serif;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-bright)}
+.vitality-day-date{font-size:12px;color:var(--text-mid)}
+.vitality-score-pill{font-family:'Cinzel',serif;font-size:10px;border:1px solid var(--sys-gold);padding:3px 9px;color:var(--sys-gold);letter-spacing:0.12em;text-transform:uppercase}
+.vitality-score-pill.empty{border-color:var(--border);color:var(--text-mid)}
+.habit-chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.habit-chip{font-family:'Cinzel',serif;font-size:9px;letter-spacing:0.08em;text-transform:uppercase;padding:3px 8px;border:1px solid var(--border);color:var(--text-mid);background:rgba(0,0,0,0.16)}
+.habit-chip.on{border-color:var(--sys-teal);color:var(--sys-teal);background:rgba(0,212,170,0.08)}
+.ledger-note{font-size:12px;color:var(--text-body);min-height:36px}
+.score-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.score-option{padding:10px;border:1px solid var(--border);background:rgba(0,0,0,0.22);color:var(--text-body);cursor:pointer;text-align:left;transition:all 0.15s}
+.score-option:hover{border-color:var(--border-glow)}
+.score-option.active{border-color:var(--sys-gold);box-shadow:0 0 12px rgba(245,200,66,0.12);background:rgba(245,200,66,0.08)}
+.score-option strong{display:block;font-family:'Cinzel',serif;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-bright)}
+.score-option span{display:block;font-size:12px;color:var(--text-mid);margin-top:4px;line-height:1.4}
+.anchor-list{display:grid;grid-template-columns:1fr;gap:8px;margin-top:14px}
+.anchor-rule{background:rgba(0,0,0,0.18);border:1px solid var(--border);padding:12px}
+.anchor-rule strong{display:block;font-family:'Cinzel',serif;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--sys-gold);margin-bottom:4px}
+.anchor-rule span{font-size:12.5px;color:var(--text-body);line-height:1.45}
+.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
+.settings-card{background:rgba(7,11,24,0.75);border:1px solid var(--border);padding:22px;min-height:320px;position:relative}
+.settings-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,var(--sys-blue),transparent)}
+.settings-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.file-label{display:inline-flex;align-items:center;justify-content:center}
+.file-label input{display:none}
+.settings-note{font-size:12.5px;color:var(--text-body);line-height:1.5}
+@media(max-width:900px){
+  .summary-row,.settings-grid,.vitality-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="starfield"></div>
+<div id="runes"></div>
+<div class="sys-vignette"></div>
+<div id="app"></div>
+<script>
+const STORAGE_KEY='quest_ledger_v4';
+const LEGACY_STORAGE_KEY='rpg_quest_v3';
+const VITALITY_ANCHORS=[
+  {id:'meal_timing',label:'Planned meals only',hint:'Only eat at planned meal times. Remove random eating.'},
+  {id:'protein_first',label:'Protein-first meals',hint:'Build each meal around protein before extras.'},
+  {id:'no_write_offs',label:'No emotional write-offs',hint:'One bad choice costs points, not the whole day.'}
+];
+const VITALITY_SCORES={
+  3:{label:'On Plan',desc:'Controlled, intentional, and no needless snacking.'},
+  2:{label:'Mostly Good',desc:'A decent day with a minor slip that stayed contained.'},
+  1:{label:'Recovered',desc:'Messy day, but you pulled it back before a spiral.'},
+  0:{label:'Chaotic',desc:'No real control today. Log it honestly and reset tomorrow.'}
+};
+const DEFAULT_STATE={version:4,character:null,quests:[],rewards:[{id:'r1',name:'15-minute rest',tier:'common',cooldownDays:0},{id:'r2',name:'Favourite snack',tier:'common',cooldownDays:0},{id:'r3',name:'Watch an episode',tier:'uncommon',cooldownDays:1},{id:'r4',name:'Gaming session',tier:'uncommon',cooldownDays:1},{id:'r5',name:'Takeaway meal',tier:'rare',cooldownDays:3},{id:'r6',name:'New gear',tier:'rare',cooldownDays:7},{id:'r7',name:'Day out',tier:'epic',cooldownDays:14},{id:'r8',name:'Weekend trip',tier:'legendary',cooldownDays:30}],achievements:{},stats:{totalQuests:0,questsByCategory:{},questsByDay:{},streakCurrent:0,streakLast:null,longestStreak:0},talentPoints:0,talents:{discipline:0,ambition:0,fortune:0,wisdom:0,resilience:0},rewardCooldowns:{},consistency:{weeklyTarget:18,entries:{}}};
+function cloneDefaultState(){return JSON.parse(JSON.stringify(DEFAULT_STATE))}
+function normalizeState(raw){
+  const base=cloneDefaultState();
+  if(!raw||typeof raw!=='object')return base;
+  const next={...base,...raw};
+  next.achievements={...base.achievements,...(raw.achievements||{})};
+  next.stats={...base.stats,...(raw.stats||{})};
+  next.stats.questsByCategory={...base.stats.questsByCategory,...((raw.stats||{}).questsByCategory||{})};
+  next.stats.questsByDay={...base.stats.questsByDay,...((raw.stats||{}).questsByDay||{})};
+  next.talents={...base.talents,...(raw.talents||{})};
+  next.rewardCooldowns={...base.rewardCooldowns,...(raw.rewardCooldowns||{})};
+  next.consistency={...base.consistency,...(raw.consistency||{})};
+  next.consistency.entries={...base.consistency.entries,...((raw.consistency||{}).entries||{})};
+  return next;
+}
+const storedState=localStorage.getItem(STORAGE_KEY)||localStorage.getItem(LEGACY_STORAGE_KEY);
+let state=normalizeState(storedState?JSON.parse(storedState):null);
+let currentTab='quests',questFilter='all',activeModal=null;
+function save(){state=normalizeState(state);localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}
+
+const DIFFICULTIES={trivial:{label:'E-Rank',xp:10,stars:'E',rewardMod:-0.2},easy:{label:'D-Rank',xp:25,stars:'D',rewardMod:-0.1},medium:{label:'C-Rank',xp:50,stars:'C',rewardMod:0},hard:{label:'B-Rank',xp:100,stars:'B',rewardMod:0.1},epic:{label:'A-Rank',xp:200,stars:'A',rewardMod:0.2},legendary:{label:'S-Rank',xp:500,stars:'S',rewardMod:1}};
+const DIFF_RANK_COLOR={trivial:'#9e9e9e',easy:'#4caf50',medium:'#42a5f5',hard:'#ab47bc',epic:'#ffa726',legendary:'#ef5350'};
+const CATEGORIES={health:{label:'Strength',icon:'⚔️',color:'#ff5570'},intelligence:{label:'Perception',icon:'👁',color:'#5eaeff'},money:{label:'Mana',icon:'💠',color:'#f5c842'},relationships:{label:'Charisma',icon:'🛡️',color:'#9c6fff'}};
+const CLASSES={warrior:{name:'Fighter',icon:'⚔️',bonus:'Strength +20% XP',statBonus:'health'},scholar:{name:'Mage',icon:'🔮',bonus:'Perception +20% XP',statBonus:'intelligence'},merchant:{name:'Assassin',icon:'🗡️',bonus:'Mana +20% XP',statBonus:'money'},diplomat:{name:'Healer',icon:'✨',bonus:'Charisma +20% XP',statBonus:'relationships'},adventurer:{name:'Shadow Monarch',icon:'👑',bonus:'All stats +5% XP',statBonus:'all'}};
+const TALENTS=[{key:'discipline',name:'Daily Quest Mastery',desc:'+5% XP on recurring quests',icon:'🔁'},{key:'ambition',name:'S-Rank Instinct',desc:'+10% XP on B-Rank quests and above',icon:'⚡'},{key:'fortune',name:'Plunder',desc:'+15% gold earned, improved drop rates',icon:'💎'},{key:'wisdom',name:'Mana Control',desc:'-10% MP costs on all abilities',icon:'🔮'},{key:'resilience',name:'Iron Body',desc:'+20 max HP, reduced failure penalty',icon:'🛡️'}];
+const LEVEL_FLAVORS=["The System has acknowledged your growth.","You have taken another step toward the pinnacle.","Your shadows grow stronger.","The gate within you opens wider.","Arise. You grow closer to the summit.","Power flows through your veins like mana.","Even the Monarchs take notice.","The System rewards the worthy."];
+const REWARD_TIERS=['common','uncommon','rare','epic','legendary'];
+const TIER_WEIGHTS=[50,30,15,4,1];
+const TIER_COLORS={common:'#78909c',uncommon:'#66bb6a',rare:'#5eaeff',epic:'#9c6fff',legendary:'#f5c842'};
+const TIER_CHESTS={common:'📦',uncommon:'💼',rare:'💎',epic:'🔮',legendary:'👑'};
+const HUNTER_RANKS=[{min:1,max:9,rank:'E',label:'E-Rank Hunter',color:'#9e9e9e'},{min:10,max:19,rank:'D',label:'D-Rank Hunter',color:'#4caf50'},{min:20,max:29,rank:'C',label:'C-Rank Hunter',color:'#42a5f5'},{min:30,max:39,rank:'B',label:'B-Rank Hunter',color:'#ab47bc'},{min:40,max:49,rank:'A',label:'A-Rank Hunter',color:'#ffa726'},{min:50,max:74,rank:'S',label:'S-Rank Hunter',color:'#ef5350'},{min:75,max:99,rank:'SS',label:'SS-Rank Hunter',color:'#f5c842'},{min:100,max:Infinity,rank:'★',label:'National-Level Hunter',color:'#00d4aa'}];
+function getHunterRank(l){return HUNTER_RANKS.find(r=>l>=r.min&&l<=r.max)||HUNTER_RANKS[0]}
+function xpForLevel(n){return n*n*50+n*50}
+function getLevel(xp){let l=1;while(xp>=xpForLevel(l))xp-=xpForLevel(l++);return l-1||1}
+function xpIntoLevel(xp,lvl){for(let i=1;i<lvl;i++)xp-=xpForLevel(i);return Math.max(0,xp)}
+function calcHP(v){return 100+v*5+(state.talents.resilience||0)*20}
+function calcMP(w){return 50+w*3}
+function getDaysRemaining(d){if(!d)return null;return Math.ceil((new Date(d)-Date.now())/86400000)}
+function daysLabel(days){if(days===null)return'';if(days<0)return'⚠ Gate has closed — Overdue';if(days===0)return'⚠ Gate closes today';return`Gate closes in ${days} day${days!==1?'s':''}`}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2)}
+function dateKey(d){const v=new Date(d);const y=v.getFullYear();const m=String(v.getMonth()+1).padStart(2,'0');const day=String(v.getDate()).padStart(2,'0');return`${y}-${m}-${day}`}
+function parseDateKey(key){return new Date(`${key}T12:00:00`)}
+function startOfWeek(d=new Date()){const v=new Date(d);v.setHours(0,0,0,0);const day=(v.getDay()+6)%7;v.setDate(v.getDate()-day);return v}
+function getWeekKeys(d=new Date()){const start=startOfWeek(d);return Array.from({length:7},(_,i)=>{const cur=new Date(start);cur.setDate(start.getDate()+i);return dateKey(cur)})}
+function getVitalityEntry(key){const entry=state.consistency.entries[key];return entry?{score:entry.score,habits:{...(entry.habits||{})},note:entry.note||'',updatedAt:entry.updatedAt||null}:{score:null,habits:{},note:'',updatedAt:null}}
+function getVitalitySummary(d=new Date()){
+  const keys=getWeekKeys(d);
+  let total=0,loggedDays=0,anchorHits=0,bestDay=0;
+  keys.forEach(key=>{
+    const entry=getVitalityEntry(key);
+    if(entry.score!==null&&entry.score!==undefined){total+=entry.score;loggedDays++}
+    const hits=Object.values(entry.habits||{}).filter(Boolean).length;
+    anchorHits+=hits;
+    bestDay=Math.max(bestDay,entry.score===null||entry.score===undefined?0:entry.score);
+  });
+  return{keys,total,loggedDays,anchorHits,bestDay,target:state.consistency.weeklyTarget||18};
+}
+function vitalityProgressPct(summary){return Math.min(100,Math.round((summary.total/Math.max(summary.target,1))*100))}
+function vitalityStatus(summary){
+  if(summary.total>=summary.target)return'Weekly target secured. Maintain control and keep the standard calm.';
+  const remaining=Math.max(0,summary.target-summary.total);
+  return`${remaining} point${remaining!==1?'s':''} left to win the week. Minimum viable progress still counts.`;
+}
+
+function initStarfield(){
+  const c=document.getElementById('starfield');if(!c)return;c.innerHTML='';
+  for(let i=0;i<130;i++){const s=document.createElement('div');s.className='star';const sz=Math.random()<0.08?2:1;s.style.cssText=`left:${Math.random()*100}%;top:${Math.random()*100}%;width:${sz}px;height:${sz}px;background:${Math.random()<0.18?'#5eaeff':Math.random()<0.25?'#9c6fff':'#c8d8ff'};animation-duration:${2+Math.random()*5}s;animation-delay:${Math.random()*5}s`;c.appendChild(s)}
+}
+const RUNE_CHARS=['ᚠ','ᚢ','ᚦ','ᚨ','ᚱ','ᚲ','ᚷ','ᚹ','ᚺ','ᚾ','ᛁ','ᛃ','ᛇ','ᛈ','ᛉ','ᛊ','ᛏ','ᛒ','ᛖ','ᛗ','ᛚ','ᛜ','ᛞ','ᛟ','◈','◇','⬡','⬢','◉','⊕'];
+function initRunes(){const c=document.getElementById('runes');if(!c)return;c.innerHTML='';for(let i=0;i<12;i++){const r=document.createElement('div');r.className='rune';r.textContent=RUNE_CHARS[Math.floor(Math.random()*RUNE_CHARS.length)];r.style.cssText=`left:${Math.random()*100}%;animation-duration:${14+Math.random()*20}s;animation-delay:${Math.random()*14}s`;c.appendChild(r)}}
+
+function render(){
+  const app=document.getElementById('app');
+  if(!state.character){renderOnboarding(app);return}
+  app.innerHTML=`<div class="sys-window">
+    ${renderStreakBanner()}
+    <div class="nav-tabs">
+      ${['quests','vitality','character','talents','achievements','rewards','stats','settings'].map(t=>`<button class="tab-btn${currentTab===t?' active':''}" onclick="setTab('${t}')">${tabLabel(t)}</button>`).join('')}
+      <div style="flex:1"></div>
+      <button class="tab-btn" onclick="showAddQuest()" style="color:var(--sys-gold);border-color:rgba(245,200,66,0.25)">+ New Quest</button>
+    </div>
+    <div class="page-content active">
+      ${currentTab==='quests'?renderQuests():currentTab==='vitality'?renderVitality():currentTab==='character'?renderCharacter():currentTab==='talents'?renderTalents():currentTab==='achievements'?renderAchievements():currentTab==='rewards'?renderRewards():currentTab==='stats'?renderStatsPage():renderSettings()}
+    </div>
+  </div>`;
+}
+function tabLabel(t){return{quests:'Quests',vitality:'Vitality',character:'Character',talents:'Skills',achievements:'Achievements',rewards:'Rewards',stats:'Records',settings:'Settings'}[t]||t}
+function setTab(t){currentTab=t;render()}
+
+function renderStreakBanner(){
+  if(!state.character)return'';
+  const s=state.stats.streakCurrent||0;if(s<1)return'';
+  const msg=s>=30?'Daily Quest Monarch':s>=7?'Consistent Hunter':s>=3?'Building Momentum':'Keep Going';
+  return`<div class="streak-banner"><span class="streak-fire">🔥</span><span class="streak-text">Day ${s} Streak</span><span class="streak-sub">${msg}</span></div>`;
+}
+
+function renderQuests(){
+  const active=state.quests.filter(q=>q.status==='active'||q.status==='available');
+  const done=state.quests.filter(q=>q.status==='completed');
+  const filtered=active.filter(q=>questFilter==='all'||q.category===questFilter);
+  const summary=getVitalitySummary();
+  const progress=vitalityProgressPct(summary);
+  return`<div class="book-spread">
+    <div class="book-page">
+      <div class="page-title"><div class="page-title-icon">Q</div>Active Quests</div>
+      <div class="summary-panel">
+        <div class="summary-stat-label">Weekly Vitality Campaign</div>
+        <div style="font-size:13px;color:var(--text-body);line-height:1.5">${vitalityStatus(summary)}</div>
+        <div class="summary-row">
+          <div class="summary-stat"><div class="summary-stat-label">Points</div><div class="summary-stat-value">${summary.total}/${summary.target}</div><div class="summary-stat-note">Weekly consistency score</div></div>
+          <div class="summary-stat"><div class="summary-stat-label">Logged Days</div><div class="summary-stat-value">${summary.loggedDays}/7</div><div class="summary-stat-note">Honest logs beat perfect plans</div></div>
+          <div class="summary-stat"><div class="summary-stat-label">Anchor Hits</div><div class="summary-stat-value">${summary.anchorHits}</div><div class="summary-stat-note">Meal timing, protein, no spirals</div></div>
+        </div>
+        <div class="summary-progress"><div class="summary-progress-fill" style="width:${progress}%"></div></div>
+      </div>
+      <div class="sys-issued">The System has issued ${active.length} quest${active.length!==1?'s':''} awaiting completion.</div>
+      <div class="filter-bar">
+        <button class="filter-btn${questFilter==='all'?' active':''}" onclick="setFilter('all')">All</button>
+        ${Object.entries(CATEGORIES).map(([k,v])=>`<button class="filter-btn${questFilter===k?' active cat-'+k:''}" onclick="setFilter('${k}')">${v.icon} ${v.label}</button>`).join('')}
+      </div>
+      ${filtered.length?filtered.map(renderQuestCard).join(''):`<div class="empty-state"><span>No active quests.</span><br>Accept a quest to begin your journey.</div>`}
+      <div style="text-align:center;margin-top:16px"><button class="btn-gold" onclick="showAddQuest()">◈ Accept New Quest</button></div>
+    </div>
+    <div class="book-page">
+      <div class="page-title"><div class="page-title-icon">L</div>Quest Log</div>
+      ${done.length?done.slice().reverse().slice(0,12).map(q=>{const col=DIFF_RANK_COLOR[q.difficulty]||'#888';return`<div class="journal-entry"><div class="journal-date">${new Date(q.completedAt||q.createdAt).toLocaleDateString('en-GB',{year:'numeric',month:'short',day:'numeric'})}</div><div class="journal-text"><span style="color:${col};font-weight:600">[${DIFFICULTIES[q.difficulty]?.stars}-Rank]</span> ${q.title} — <span style="color:${CATEGORIES[q.category]?.color}">${CATEGORIES[q.category]?.label}</span></div></div>`}).join(''):`<div class="empty-state"><span>Quest log is empty.</span><br>Complete quests to fill these pages.</div>`}
+    </div>
+  </div>`;
+}
+function renderVitality(){
+  const summary=getVitalitySummary();
+  const progress=vitalityProgressPct(summary);
+  return`<div class="vitality-grid">
+    <div class="vitality-page">
+      <div class="page-title"><div class="page-title-icon">V</div>Vitality Ledger</div>
+      <div class="sys-issued">Win the week by being repeatable, not by being extreme.</div>
+      <div class="summary-row">
+        <div class="summary-stat"><div class="summary-stat-label">Weekly Target</div><div class="summary-stat-value">${summary.target}</div><div class="summary-stat-note">Points needed this week</div></div>
+        <div class="summary-stat"><div class="summary-stat-label">Current Score</div><div class="summary-stat-value">${summary.total}</div><div class="summary-stat-note">${summary.loggedDays} day${summary.loggedDays!==1?'s':''} logged</div></div>
+        <div class="summary-stat"><div class="summary-stat-label">Best Day</div><div class="summary-stat-value">${summary.bestDay}/3</div><div class="summary-stat-note">Minimum viable success counts</div></div>
+      </div>
+      <div class="summary-progress"><div class="summary-progress-fill" style="width:${progress}%"></div></div>
+      <div style="margin-top:8px;font-size:12.5px;color:var(--text-body)">${vitalityStatus(summary)}</div>
+      <div class="sub-heading">Daily Score Rules</div>
+      <div class="score-grid">
+        ${Object.entries(VITALITY_SCORES).sort((a,b)=>Number(b[0])-Number(a[0])).map(([score,meta])=>`<div class="score-option active"><strong>${score} points - ${meta.label}</strong><span>${meta.desc}</span></div>`).join('')}
+      </div>
+      <div class="sub-heading">Anchor Rules</div>
+      <div class="anchor-list">
+        ${VITALITY_ANCHORS.map(anchor=>`<div class="anchor-rule"><strong>${anchor.label}</strong><span>${anchor.hint}</span></div>`).join('')}
+      </div>
+    </div>
+    <div class="vitality-page">
+      <div class="page-title"><div class="page-title-icon">W</div>This Week</div>
+      <div class="vitality-day-list">
+        ${summary.keys.map(key=>{
+          const entry=getVitalityEntry(key);
+          const logged=entry.score!==null&&entry.score!==undefined;
+          const scoreMeta=logged?VITALITY_SCORES[entry.score]:null;
+          return`<div class="vitality-day-card">
+            <div class="vitality-day-head">
+              <div>
+                <div class="vitality-day-name">${parseDateKey(key).toLocaleDateString('en-GB',{weekday:'long'})}</div>
+                <div class="vitality-day-date">${parseDateKey(key).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</div>
+              </div>
+              <div class="vitality-score-pill${logged?'':' empty'}">${logged?`${entry.score} pt${entry.score!==1?'s':''}`:'Not logged'}</div>
+            </div>
+            <div class="habit-chip-row">
+              ${VITALITY_ANCHORS.map(anchor=>`<span class="habit-chip${entry.habits[anchor.id]?' on':''}">${anchor.label}</span>`).join('')}
+            </div>
+            <div class="ledger-note">${entry.note|| (scoreMeta?scoreMeta.desc:'Log the day honestly. Imperfect data is better than emotional guessing.')}</div>
+            <div style="margin-top:12px"><button class="btn-gold" onclick="showVitalityCheckin('${key}')">${logged?'Edit check-in':'Log check-in'}</button></div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+function renderQuestCard(q){
+  const days=getDaysRemaining(q.dueDate);const isOverdue=days!==null&&days<0;
+  const rankCol=DIFF_RANK_COLOR[q.difficulty]||'#888';
+  return`<div class="quest-card ${q.category}">
+    ${isOverdue?`<div class="rank-badge rank-urgent">⚠ Overdue</div>`:''}
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+      <span style="font-family:'Cinzel',serif;font-size:11px;font-weight:900;color:${rankCol};border:1px solid ${rankCol};padding:1px 6px;letter-spacing:0.08em;flex-shrink:0">${DIFFICULTIES[q.difficulty]?.stars}</span>
+      <div class="quest-title">${q.title}</div>
+    </div>
+    <div class="quest-meta">
+      <span class="quest-cat-badge cat-${q.category}">${CATEGORIES[q.category]?.icon} ${CATEGORIES[q.category]?.label}</span>
+      <span style="color:var(--sys-gold);font-weight:600">${DIFFICULTIES[q.difficulty]?.xp} XP</span>
+      <span style="color:var(--text-mid)">${DIFFICULTIES[q.difficulty]?.label}</span>
+      ${q.recurrence&&q.recurrence!=='none'?`<span style="color:var(--sys-teal)">↻ ${q.recurrence}</span>`:''}
+    </div>
+    ${q.dueDate?`<div class="due-label">${daysLabel(days)}</div>`:''}
+    ${q.description?`<div class="quest-desc">${q.description}</div>`:''}
+    <div style="display:flex;gap:6px;margin-top:10px">
+      <button class="btn-complete" onclick="completeQuest('${q.id}')">◈ Complete</button>
+      <button class="btn-red" onclick="abandonQuest('${q.id}')">✗ Forfeit</button>
+    </div>
+  </div>`;
+}
+function setFilter(f){questFilter=f;render()}
+
+function renderCharacter(){
+  const c=state.character;if(!c)return'';
+  const xp=c.xp||0;const lvl=getLevel(xp);
+  const xpNeeded=xpForLevel(lvl);const xpIn=xpIntoLevel(xp,lvl);
+  const pct=Math.min(100,Math.round(xpIn/xpNeeded*100));
+  const maxHP=calcHP(c.stats.vitality);const maxMP=calcMP(c.stats.wisdom);
+  const rank=getHunterRank(lvl);
+  return`<div class="book-spread">
+    <div class="book-page">
+      <div class="page-title"><div class="page-title-icon">C</div>Character</div>
+      <div class="level-label">Level</div>
+      <div class="level-num">${lvl}</div>
+      <div class="hunter-rank-row"><span style="font-family:'Cinzel',serif;font-size:12px;font-weight:700;color:${rank.color};border:1px solid ${rank.color};padding:3px 14px;letter-spacing:0.15em">${rank.label}</span></div>
+      <div style="text-align:center;margin-bottom:14px">
+        <div style="font-family:'Inter',sans-serif;font-size:17px;font-weight:600;color:var(--text-bright)">${c.name}</div>
+        ${c.title?`<div style="font-size:12px;color:var(--text-mid);margin-top:2px">${c.title}</div>`:''}
+        <div style="font-family:'Cinzel',serif;font-size:10px;color:var(--text-dim);margin-top:3px;letter-spacing:0.1em;text-transform:uppercase">${CLASSES[c.class]?.name||''}</div>
+      </div>
+      <div class="xp-bar-wrap">
+        <div class="xp-label"><span>Experience</span><span>${xpIn} / ${xpNeeded} · ${pct}%</span></div>
+        <div class="xp-bar"><div class="xp-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="hp-mp-row">
+        <div class="hp-box"><div class="resource-label" style="color:var(--sys-red)">HP</div><div class="resource-val" style="color:var(--sys-red)">${c.hp||maxHP} / ${maxHP}</div></div>
+        <div class="mp-box"><div class="resource-label" style="color:var(--sys-blue)">MP</div><div class="resource-val" style="color:var(--sys-blue)">${maxMP} / ${maxMP}</div></div>
+      </div>
+      <div class="stat-row">
+        ${renderStat('⚔️','Strength',c.stats.vitality,'bar-health')}
+        ${renderStat('👁','Perception',c.stats.wisdom,'bar-wisdom')}
+        ${renderStat('💠','Mana',c.stats.fortune,'bar-fortune')}
+        ${renderStat('🛡️','Charisma',c.stats.charisma,'bar-charisma')}
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+        <div class="gold-amount">💠 ${c.gold||0} Gold</div>
+        <div style="font-family:'Cinzel',serif;font-size:10px;color:var(--sys-purple);letter-spacing:0.1em">◈ ${state.talentPoints||0} Skill Points</div>
+      </div>
+    </div>
+    <div class="book-page">
+      <div class="page-title"><div class="page-title-icon">R</div>Records</div>
+      <div class="sub-heading">Quests Cleared</div>
+      <div style="font-family:'Orbitron',monospace;font-size:38px;font-weight:900;color:var(--sys-gold);text-shadow:0 0 16px rgba(245,200,66,0.3)">${state.stats.totalQuests||0}</div>
+      <div class="sub-heading">Progress by Type</div>
+      ${Object.entries(CATEGORIES).map(([k,v])=>{const count=(state.stats.questsByCategory||{})[k]||0;const pct=Math.min(100,count/50*100);return`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-family:'Cinzel',serif;font-size:9px;letter-spacing:0.12em;margin-bottom:3px;text-transform:uppercase"><span style="color:${v.color}">${v.icon} ${v.label}</span><span style="color:var(--text-dim)">${count}/50</span></div><div class="stat-bar"><div class="stat-fill" style="width:${pct}%;background:${v.color};box-shadow:0 0 5px ${v.color}"></div></div></div>`}).join('')}
+      <div class="sub-heading">Personal Bests</div>
+      <div style="font-size:12.5px;color:var(--text-body);line-height:2.3">
+        <div>🔥 Longest streak: <span style="color:var(--sys-gold);font-weight:600">${state.stats.longestStreak||0} days</span></div>
+        <div>⚡ Total XP: <span style="color:var(--sys-blue);font-weight:600">${c.xp||0}</span></div>
+        <div>👑 Rank: <span style="color:${rank.color};font-weight:600">${rank.label}</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+function renderStat(icon,name,val,barClass){const pct=Math.min(100,(val/100)*100);return`<div class="stat-box"><span class="stat-icon">${icon}</span><div class="stat-name">${name}</div><div class="stat-val">${val}</div><div class="stat-bar"><div class="stat-fill ${barClass}" style="width:${pct}%"></div></div></div>`}
+
+function renderTalents(){
+  return`<div class="book-page" style="max-width:640px;margin:14px auto 0">
+    <div class="page-title"><div class="page-title-icon">K</div>Skill Tree</div>
+    <div class="sys-issued" style="margin-bottom:16px">◈ ${state.talentPoints||0} Skill Point${(state.talentPoints||0)!==1?'s':''} available for allocation.</div>
+    <div class="talent-grid">
+      ${TALENTS.map(t=>{const owned=state.talents[t.key]||0;const canBuy=(state.talentPoints||0)>0;return`<div class="talent-path"><div style="display:flex;align-items:center;gap:10px;margin-bottom:5px"><span style="font-size:20px">${t.icon}</span><div class="talent-path-name">${t.name}</div></div><div class="talent-desc">${t.desc}</div><div style="display:flex;align-items:center;justify-content:space-between"><div class="talent-owned">Rank ${owned}</div>${canBuy?`<button class="btn-gold" style="font-size:10px;padding:5px 14px" onclick="buyTalent('${t.key}')">◈ Learn</button>`:''}</div></div>`}).join('')}
+    </div>
+  </div>`;
+}
+
+const ACHIEVEMENTS_DEF=[
+  {id:'first_quest',name:'First Gate',icon:'🚪',desc:'Complete your very first quest'},
+  {id:'lvl5',name:'Awakened',icon:'⚡',desc:'Reach level 5'},
+  {id:'lvl10',name:'Ranked Up',icon:'📋',desc:'Reach level 10'},
+  {id:'lvl25',name:'Veteran Hunter',icon:'🦾',desc:'Reach level 25'},
+  {id:'streak3',name:'Consistent',icon:'📅',desc:'Maintain a 3-day streak'},
+  {id:'streak7',name:'Week Warrior',icon:'🔥',desc:'Maintain a 7-day streak'},
+  {id:'streak30',name:'Iron Routine',icon:'💪',desc:'Maintain a 30-day streak'},
+  {id:'quests10',name:'Getting Serious',icon:'✅',desc:'Complete 10 quests total'},
+  {id:'quests50',name:'Prolific',icon:'📖',desc:'Complete 50 quests total'},
+  {id:'health10',name:'Body & Soul',icon:'⚔️',desc:'Complete 10 Strength quests'},
+  {id:'intelligence10',name:'Sharp Mind',icon:'👁',desc:'Complete 10 Perception quests'},
+  {id:'money10',name:'Mana Efficient',icon:'💠',desc:'Complete 10 Mana quests'},
+  {id:'relationships10',name:'People Person',icon:'🛡️',desc:'Complete 10 Charisma quests'},
+  {id:'legendary1',name:'S-Rank Clear',icon:'👑',desc:'Complete an S-Rank quest'},
+  {id:'allcats',name:'Renaissance Soul',icon:'🌟',desc:'Complete 5 quests in all 4 categories'},
+  {id:'perfectday',name:'Perfect Day',icon:'⭐',desc:'Complete all due quests in a single day'},
+];
+
+function renderAchievements(){
+  const unlocked=Object.keys(state.achievements||{}).length;
+  return`<div class="book-page" style="max-width:760px;margin:14px auto 0">
+    <div class="page-title"><div class="page-title-icon">A</div>Achievements</div>
+    <div style="font-family:'Inter',sans-serif;font-size:12px;color:var(--text-mid);margin-bottom:16px">${unlocked} / ${ACHIEVEMENTS_DEF.length} unlocked</div>
+    <div class="trophy-grid">
+      ${ACHIEVEMENTS_DEF.map(a=>{const isUnlocked=!!(state.achievements||{})[a.id];return`<div class="trophy-card ${isUnlocked?'unlocked':'locked'}" title="${a.desc}"><span class="trophy-icon">${a.icon}</span><div class="trophy-name">${a.name}</div>${isUnlocked?`<div style="font-family:'Cinzel',serif;font-size:8px;color:var(--sys-blue);margin-top:4px;letter-spacing:0.12em">ACHIEVED</div>`:`<div class="trophy-desc">${a.desc}</div>`}</div>`}).join('')}
+    </div>
+  </div>`;
+}
+
+function renderRewards(){
+  return`<div class="book-page" style="max-width:640px;margin:14px auto 0">
+    <div class="page-title"><div class="page-title-icon">I</div>Item Shop</div>
+    <div class="sys-issued" style="margin-bottom:16px">Rewards are unlocked by completing quests. The System determines what you receive.</div>
+    <div class="reward-list">
+      ${(state.rewards||[]).map(r=>`<div class="reward-item"><div class="reward-tier-dot dot-${r.tier}"></div><div style="flex:1"><div class="reward-name">${r.name}</div><div class="reward-tier-label">${r.tier}${r.cooldownDays>0?` · ${r.cooldownDays}d cooldown`:''}</div></div><button class="btn-red" onclick="removeReward('${r.id}')">✗</button></div>`).join('')}
+    </div>
+    <div style="text-align:center;margin-top:14px"><button class="btn-parch" onclick="showAddReward()">◈ Add Reward</button></div>
+  </div>`;
+}
+
+function renderStatsPage(){
+  return`<div class="book-page" style="max-width:740px;margin:14px auto 0">
+    <div class="page-title"><div class="page-title-icon">D</div>Dungeon Records</div>
+    <div class="sub-heading">Activity — Last 364 Days</div>
+    <div class="heatmap-grid">${Array.from({length:364},(_,i)=>{const d=new Date();d.setDate(d.getDate()-363+i);const key=d.toISOString().split('T')[0];const v=(state.stats.questsByDay||{})[key]||0;const cls=v===0?'heat-0':v<=1?'heat-1':v<=3?'heat-2':v<=5?'heat-3':'heat-4';return`<div class="heat-cell ${cls}" title="${key}: ${v} quest${v!==1?'s':''}"></div>`}).join('')}</div>
+    <div class="sub-heading">Quests by Category</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+      ${Object.entries(CATEGORIES).map(([k,v])=>{const count=(state.stats.questsByCategory||{})[k]||0;return`<div style="background:rgba(10,15,30,0.8);border:1px solid var(--border);border-left:3px solid ${v.color};padding:14px;text-align:center"><div style="font-size:22px">${v.icon}</div><div style="font-family:'Cinzel',serif;font-size:9px;color:${v.color};letter-spacing:0.15em;text-transform:uppercase;margin:4px 0">${v.label}</div><div style="font-family:'Orbitron',monospace;font-size:28px;font-weight:900;color:var(--text-bright)">${count}</div></div>`}).join('')}
+    </div>
+  </div>`;
+}
+
+function renderSettings(){
+  return`<div class="settings-grid">
+    <div class="settings-card">
+      <div class="page-title"><div class="page-title-icon">S</div>Save Data</div>
+      <div class="settings-note">Back up your character, quests, rewards, and weekly vitality logs as JSON. This gives the prototype a path toward a real web app workflow instead of fragile browser-only state.</div>
+      <div class="settings-actions">
+        <button class="btn-gold" onclick="downloadState()">Export Chronicle</button>
+        <label class="btn-parch file-label">Import Chronicle<input type="file" accept="application/json" onchange="importStateFile(event)"></label>
+      </div>
+      <div class="sub-heading">Storage</div>
+      <div class="settings-note">Primary key: <span style="color:var(--sys-gold)">${STORAGE_KEY}</span><br>Legacy key supported: <span style="color:var(--text-mid)">${LEGACY_STORAGE_KEY}</span></div>
+    </div>
+    <div class="settings-card">
+      <div class="page-title"><div class="page-title-icon">T</div>Vitality Target</div>
+      <div class="settings-note">PRD1 points toward a calm weekly scoring system. Set the number that represents a strong week for you without forcing perfection.</div>
+      <div class="form-group" style="margin-top:16px">
+        <label class="form-label">Weekly points target</label>
+        <input class="form-input" id="weekly-target-input" type="number" min="1" max="35" value="${state.consistency.weeklyTarget||18}">
+      </div>
+      <div class="settings-actions">
+        <button class="btn-gold" onclick="updateWeeklyTarget()">Save target</button>
+      </div>
+      <div class="sub-heading">Current Principle</div>
+      <div class="settings-note">Do not win the week by being extreme. Win it by being repeatable.</div>
+    </div>
+  </div>`;
+}
+
+function completeQuest(id){
+  const q=state.quests.find(x=>x.id===id);if(!q)return;
+  q.status='completed';q.completedAt=new Date().toISOString();
+  const today=new Date().toISOString().split('T')[0];
+  const yd=new Date();yd.setDate(yd.getDate()-1);const yday=yd.toISOString().split('T')[0];
+  const last=state.stats.streakLast;
+  if(last===today){}else if(last===yday){state.stats.streakCurrent=(state.stats.streakCurrent||0)+1}else{state.stats.streakCurrent=1}
+  state.stats.streakLast=today;
+  state.stats.longestStreak=Math.max(state.stats.longestStreak||0,state.stats.streakCurrent);
+  const diff=DIFFICULTIES[q.difficulty];let baseXP=diff.xp;
+  const streak=Math.min(state.stats.streakCurrent||0,10);
+  const c=state.character;let bonus=1+(streak*0.1);
+  if(c.class==='adventurer')bonus*=1.05;else if(CLASSES[c.class]?.statBonus===q.category)bonus*=1.2;
+  if(state.talents.discipline>0&&q.recurrence&&q.recurrence!=='none')bonus+=0.05*state.talents.discipline;
+  if(state.talents.ambition>0&&['hard','epic','legendary'].includes(q.difficulty))bonus+=0.1*state.talents.ambition;
+  const firstToday=!state.stats.questsByDay||!state.stats.questsByDay[today];
+  if(firstToday)baseXP+=25;
+  const totalXP=Math.round(baseXP*bonus);
+  const prevLvl=getLevel(c.xp||0);
+  c.xp=(c.xp||0)+totalXP;
+  const goldMult=1+(c.stats.fortune-10)*0.01*(state.talents.fortune>0?1.15:1);
+  c.gold=(c.gold||0)+Math.round(diff.xp/10*Math.max(0.5,goldMult));
+  state.stats.totalQuests=(state.stats.totalQuests||0)+1;
+  state.stats.questsByCategory=state.stats.questsByCategory||{};
+  state.stats.questsByCategory[q.category]=(state.stats.questsByCategory[q.category]||0)+1;
+  state.stats.questsByDay=state.stats.questsByDay||{};
+  state.stats.questsByDay[today]=(state.stats.questsByDay[today]||0)+1;
+  if(state.stats.questsByCategory[q.category]%10===0){c.xp+=50;showXPPopup('+50 XP — Mastery!')}
+  if(q.recurrence&&q.recurrence!=='none'){const nq={...q,id:uid(),status:'available',createdAt:new Date().toISOString(),completedAt:null};const nd=new Date(q.dueDate||new Date());if(q.recurrence==='daily')nd.setDate(nd.getDate()+1);else if(q.recurrence==='weekly')nd.setDate(nd.getDate()+7);else if(q.recurrence==='monthly')nd.setMonth(nd.getMonth()+1);nq.dueDate=nd.toISOString().split('T')[0];state.quests.push(nq)}
+  const newLvl=getLevel(c.xp);
+  if(newLvl>prevLvl){c.stats.vitality=Math.min(100,c.stats.vitality+1);c.stats.wisdom=Math.min(100,c.stats.wisdom+1);c.stats.fortune=Math.min(100,c.stats.fortune+1);c.stats.charisma=Math.min(100,c.stats.charisma+1);if(newLvl%5===0)state.talentPoints=(state.talentPoints||0)+1;showLevelUp(newLvl)}
+  checkAchievements(q);save();
+  showXPPopup(`+${totalXP} XP`);
+  setTimeout(()=>rollReward(q.difficulty),newLvl>getLevel((c.xp||0)-totalXP)?3500:800);
+  render();
+}
+function abandonQuest(id){const q=state.quests.find(x=>x.id===id);if(!q)return;if(!confirm(`Forfeit quest "${q.title}"?\n\nHP penalty will be applied.`))return;q.status='abandoned';const c=state.character;const pen=state.talents.resilience>0?5:10;c.hp=Math.max(1,(c.hp||calcHP(c.stats.vitality))-pen);save();render()}
+function rollReward(difficulty){
+  const diff=DIFFICULTIES[difficulty];if(!diff)return;
+  let chance=0.7+diff.rewardMod;
+  chance+=Math.min(state.stats.streakCurrent||0,10)*0.01;
+  const fortune=state.character.stats.fortune-10;if(fortune>0)chance+=fortune*0.005;
+  if(state.talents.fortune>0)chance+=0.05*state.talents.fortune;
+  if(Math.random()>chance){showNoReward();return}
+  let weights=[...TIER_WEIGHTS];if(difficulty==='legendary')weights=[0,0,0,0,100];
+  const total=weights.reduce((a,b)=>a+b,0);let r=Math.random()*total,ti=0;
+  for(let i=0;i<weights.length;i++){r-=weights[i];if(r<=0){ti=i;break}}
+  const tier=REWARD_TIERS[ti];const pool=(state.rewards||[]).filter(rw=>rw.tier===tier);
+  if(!pool.length){showNoReward();return}
+  showReward(pool[Math.floor(Math.random()*pool.length)],tier);
+}
+function showReward(reward,tier){
+  const ov=document.createElement('div');ov.id='reward-overlay';
+  ov.innerHTML=`<div class="chest-container"><div class="sys-issued" style="margin-bottom:16px;font-size:12px">The System has rewarded you for your efforts.</div><span class="chest-emoji">${TIER_CHESTS[tier]}</span><div class="tier-banner tier-${tier}" style="color:${TIER_COLORS[tier]}">${tier.toUpperCase()}</div><div class="reward-text">${reward.name}</div><div class="reward-xp">◈ Reward Acquired ◈</div><button class="btn-gold" onclick="document.getElementById('reward-overlay').remove()">◈ Claim Reward</button></div>`;
+  document.body.appendChild(ov);
+}
+function showNoReward(){
+  const ov=document.createElement('div');ov.id='reward-overlay';
+  ov.innerHTML=`<div class="chest-container"><div class="sys-issued" style="margin-bottom:16px;font-size:12px">The System has acknowledged your efforts.</div><span class="chest-emoji">📦</span><div style="font-family:'Cinzel',serif;font-size:15px;color:var(--text-mid);margin:12px 0;letter-spacing:0.1em">No Reward Obtained</div><div style="font-family:'Inter',sans-serif;font-size:13px;color:var(--text-body);max-width:360px;text-align:center;line-height:1.7;margin-bottom:20px">The System does not always give.<br>Your experience grows regardless.</div><button class="btn-parch" onclick="document.getElementById('reward-overlay').remove()">Continue</button></div>`;
+  document.body.appendChild(ov);
+}
+function showLevelUp(level){
+  const ov=document.createElement('div');ov.id='levelup-overlay';
+  const flavor=LEVEL_FLAVORS[Math.floor(Math.random()*LEVEL_FLAVORS.length)];
+  const rank=getHunterRank(level);
+  ov.innerHTML=`<div class="levelup-sys">The System</div><div class="levelup-title">Level Up</div><div class="levelup-num">${level}</div><div style="margin-top:10px"><span style="font-family:'Cinzel',serif;font-size:12px;font-weight:700;color:${rank.color};border:1px solid ${rank.color};padding:4px 16px;letter-spacing:0.18em">${rank.label}</span></div><div class="levelup-flavor">${flavor}</div>`;
+  document.body.appendChild(ov);setTimeout(()=>ov.remove(),3500);
+}
+function showXPPopup(text){const el=document.createElement('div');el.className='xp-popup';el.textContent=text;el.style.cssText=`left:${Math.random()*60+20}%;top:${Math.random()*30+30}%`;document.body.appendChild(el);setTimeout(()=>el.remove(),1600)}
+
+function checkAchievements(q){
+  const a=state.achievements||{};const cats=state.stats.questsByCategory||{};
+  const total=state.stats.totalQuests||0;const lvl=getLevel(state.character.xp||0);const streak=state.stats.streakCurrent||0;
+  const unlock=(id,name,icon)=>{if(!a[id]){a[id]=true;toastAch(name,icon)}};
+  if(total>=1)unlock('first_quest','First Gate','🚪');
+  if(lvl>=5)unlock('lvl5','Awakened','⚡');
+  if(lvl>=10)unlock('lvl10','Ranked Up','📋');
+  if(lvl>=25)unlock('lvl25','Veteran Hunter','🦾');
+  if(streak>=3)unlock('streak3','Consistent','📅');
+  if(streak>=7)unlock('streak7','Week Warrior','🔥');
+  if(streak>=30)unlock('streak30','Iron Routine','💪');
+  if(total>=10)unlock('quests10','Getting Serious','✅');
+  if(total>=50)unlock('quests50','Prolific','📖');
+  if((cats.health||0)>=10)unlock('health10','Body & Soul','⚔️');
+  if((cats.intelligence||0)>=10)unlock('intelligence10','Sharp Mind','👁');
+  if((cats.money||0)>=10)unlock('money10','Mana Efficient','💠');
+  if((cats.relationships||0)>=10)unlock('relationships10','People Person','🛡️');
+  if(q.difficulty==='legendary')unlock('legendary1','S-Rank Clear','👑');
+  const allCatsDone=Object.keys(CATEGORIES).every(k=>(cats[k]||0)>=5);if(allCatsDone)unlock('allcats','Renaissance Soul','🌟');
+  state.achievements=a;
+}
+function toastAch(name,icon){
+  const el=document.createElement('div');
+  el.style.cssText=`position:fixed;bottom:24px;right:24px;z-index:9000;background:var(--panel);border:1px solid var(--sys-gold);padding:14px 18px;display:flex;align-items:center;gap:12px;box-shadow:0 0 24px rgba(245,200,66,0.18);font-family:'Inter',sans-serif`;
+  el.innerHTML=`<span style="font-size:22px">${icon}</span><div><div style="font-family:'Cinzel',serif;font-size:8px;color:var(--text-dim);letter-spacing:0.25em;text-transform:uppercase;margin-bottom:3px">The System</div><div style="font-size:12px;font-weight:600;color:var(--sys-gold)">Achievement Unlocked</div><div style="font-size:12px;color:var(--text-body);margin-top:1px">${name}</div></div>`;
+  document.body.appendChild(el);setTimeout(()=>el.remove(),3500);
+}
+
+function showAddQuest(){
+  const ov=document.createElement('div');ov.className='modal-overlay';
+  ov.innerHTML=`<div class="modal-parch"><div class="modal-title">◈ New Quest Issued ◈</div><div class="form-group"><label class="form-label">Quest Name</label><input class="form-input" id="q-title" placeholder="Enter quest name..."></div><div class="form-group"><label class="form-label">Notes (optional)</label><textarea class="form-textarea" id="q-desc" rows="2" placeholder="Any additional details..."></textarea></div><div class="form-row"><div class="form-group"><label class="form-label">Type</label><select class="form-select" id="q-cat">${Object.entries(CATEGORIES).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('')}</select></div><div class="form-group"><label class="form-label">Gate Rank</label><select class="form-select" id="q-diff">${Object.entries(DIFFICULTIES).map(([k,v])=>`<option value="${k}">[${v.stars}] ${v.label} — ${v.xp} XP</option>`).join('')}</select></div></div><div class="form-row"><div class="form-group"><label class="form-label">Due Date</label><input class="form-input" id="q-due" type="date"></div><div class="form-group"><label class="form-label">Recurrence</label><select class="form-select" id="q-rec"><option value="none">None</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></div></div><div class="form-actions"><button class="btn-gold" onclick="submitQuest()">◈ Accept Quest</button><button class="btn-parch" onclick="closeModal()">Decline</button></div></div>`;
+  ov.onclick=e=>{if(e.target===ov)closeModal()};document.body.appendChild(ov);activeModal=ov;
+}
+function showVitalityCheckin(dateStr){
+  const entry=getVitalityEntry(dateStr);
+  const prettyDate=parseDateKey(dateStr).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
+  const selectedScore=entry.score===null||entry.score===undefined?'':entry.score;
+  const ov=document.createElement('div');ov.className='modal-overlay';
+  ov.innerHTML=`<div class="modal-parch">
+    <div class="modal-title">Daily Vitality Check-in</div>
+    <div class="sys-issued" style="margin-bottom:16px">${prettyDate}</div>
+    <div class="form-group">
+      <label class="form-label">Consistency score</label>
+      <div class="score-grid">
+        ${Object.entries(VITALITY_SCORES).sort((a,b)=>Number(b[0])-Number(a[0])).map(([score,meta])=>`<button class="score-option${String(selectedScore)===score?' active':''}" type="button" data-score="${score}" onclick="selectVitalityScore(${score})"><strong>${score} points - ${meta.label}</strong><span>${meta.desc}</span></button>`).join('')}
+      </div>
+      <input id="v-score" type="hidden" value="${selectedScore}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Anchor habits</label>
+      ${VITALITY_ANCHORS.map(anchor=>`<label style="display:flex;align-items:center;gap:10px;margin-bottom:8px;color:var(--text-body)"><input type="checkbox" id="v-anchor-${anchor.id}" ${entry.habits[anchor.id]?'checked':''}><span><strong style="display:block;font-family:'Cinzel',serif;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-bright)">${anchor.label}</strong><span style="font-size:12px;color:var(--text-mid)">${anchor.hint}</span></span></label>`).join('')}
+    </div>
+    <div class="form-group">
+      <label class="form-label">Field note</label>
+      <textarea class="form-textarea" id="v-note" rows="3" placeholder="What helped, what triggered you, what you want to repeat tomorrow...">${entry.note||''}</textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn-gold" onclick="submitVitalityCheckin('${dateStr}')">Seal entry</button>
+      <button class="btn-parch" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>`;
+  ov.onclick=e=>{if(e.target===ov)closeModal()};document.body.appendChild(ov);activeModal=ov;
+}
+function selectVitalityScore(score){
+  const input=document.getElementById('v-score');if(input)input.value=String(score);
+  document.querySelectorAll('.score-option[data-score]').forEach(btn=>btn.classList.toggle('active',btn.dataset.score===String(score)));
+}
+function submitVitalityCheckin(dateStr){
+  const scoreValue=document.getElementById('v-score')?.value;
+  if(scoreValue===''){alert('Choose a daily score before saving.');return}
+  const habits={};
+  VITALITY_ANCHORS.forEach(anchor=>{habits[anchor.id]=!!document.getElementById(`v-anchor-${anchor.id}`)?.checked});
+  state.consistency.entries[dateStr]={score:parseInt(scoreValue,10),habits,note:document.getElementById('v-note')?.value.trim()||'',updatedAt:new Date().toISOString()};
+  save();closeModal();render();
+}
+function submitQuest(){
+  const title=document.getElementById('q-title').value.trim();if(!title){alert('Quest name required.');return}
+  state.quests.push({id:uid(),title,description:document.getElementById('q-desc').value.trim(),category:document.getElementById('q-cat').value,difficulty:document.getElementById('q-diff').value,dueDate:document.getElementById('q-due').value||null,recurrence:document.getElementById('q-rec').value,status:'available',createdAt:new Date().toISOString()});
+  save();closeModal();render();
+}
+function showAddReward(){
+  const ov=document.createElement('div');ov.className='modal-overlay';
+  ov.innerHTML=`<div class="modal-parch"><div class="modal-title">◈ Add Reward ◈</div><div class="form-group"><label class="form-label">Reward Name</label><input class="form-input" id="rw-name" placeholder="Name your reward..."></div><div class="form-row"><div class="form-group"><label class="form-label">Grade</label><select class="form-select" id="rw-tier">${REWARD_TIERS.map(t=>`<option value="${t}">${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('')}</select></div><div class="form-group"><label class="form-label">Cooldown (days)</label><input class="form-input" id="rw-cool" type="number" min="0" value="0"></div></div><div class="form-actions"><button class="btn-gold" onclick="submitReward()">◈ Register</button><button class="btn-parch" onclick="closeModal()">Cancel</button></div></div>`;
+  ov.onclick=e=>{if(e.target===ov)closeModal()};document.body.appendChild(ov);activeModal=ov;
+}
+function submitReward(){const name=document.getElementById('rw-name').value.trim();if(!name)return;state.rewards.push({id:uid(),name,tier:document.getElementById('rw-tier').value,cooldownDays:parseInt(document.getElementById('rw-cool').value)||0});save();closeModal();render()}
+function removeReward(id){state.rewards=state.rewards.filter(r=>r.id!==id);save();render()}
+function closeModal(){if(activeModal){activeModal.remove();activeModal=null}}
+function buyTalent(key){if((state.talentPoints||0)<=0)return;state.talentPoints--;state.talents[key]=(state.talents[key]||0)+1;save();render()}
+function updateWeeklyTarget(){
+  const value=parseInt(document.getElementById('weekly-target-input')?.value||'',10);
+  if(!Number.isFinite(value)||value<1||value>35){alert('Choose a weekly target between 1 and 35.');return}
+  state.consistency.weeklyTarget=value;save();render();
+}
+function downloadState(){
+  const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement('a');
+  link.href=url;
+  link.download=`quest-ledger-backup-${dateKey(new Date())}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+function importStateFile(event){
+  const file=event.target.files&&event.target.files[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const parsed=JSON.parse(reader.result);
+      state=normalizeState(parsed);
+      save();
+      render();
+      alert('Chronicle imported successfully.');
+    }catch(err){
+      alert('That file could not be imported.');
+    }finally{
+      event.target.value='';
+    }
+  };
+  reader.readAsText(file);
+}
+
+let selectedClass='adventurer';
+function renderOnboarding(app){
+  app.innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px">
+    <div style="background:linear-gradient(145deg,var(--panel),var(--deep));border:1px solid var(--border-glow);box-shadow:0 0 0 1px var(--border),0 0 60px rgba(94,174,255,0.07),0 0 120px rgba(156,111,255,0.04);padding:36px;max-width:540px;width:100%;position:relative">
+      <div style="position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--sys-blue),var(--sys-purple),transparent)"></div>
+      <div style="text-align:center;margin-bottom:28px">
+        <div style="font-family:'Cinzel',serif;font-size:10px;font-weight:600;color:var(--text-dim);letter-spacing:0.4em;text-transform:uppercase;margin-bottom:12px">The System</div>
+        <div style="font-family:'Cinzel',serif;font-size:26px;font-weight:900;color:var(--sys-gold);letter-spacing:0.1em;text-shadow:0 0 24px rgba(245,200,66,0.4)">Hunter Registry</div>
+        <div style="font-family:'Inter',sans-serif;font-size:13px;color:var(--text-body);margin-top:8px">Arise. Your journey begins now.</div>
+      </div>
+      <div class="sys-issued" style="margin-bottom:22px">A new Hunter has been detected. Please complete your registration to proceed.</div>
+      <div class="form-group"><label class="form-label">Hunter Name</label><input class="form-input" id="c-name" placeholder="Enter your name..."></div>
+      <div class="form-group"><label class="form-label">Title (optional)</label><input class="form-input" id="c-title" placeholder="e.g. Shadow Monarch, The Strongest..."></div>
+      <div class="form-group">
+        <label class="form-label">Hunter Class</label>
+        <div class="class-grid" id="class-grid">
+          ${Object.entries(CLASSES).map(([k,v])=>`<div class="class-card${k===selectedClass?' selected':''}" onclick="selectClass('${k}')"><span class="class-icon">${v.icon}</span><div class="class-name">${v.name}</div><div class="class-bonus">${v.bonus}</div></div>`).join('')}
+        </div>
+      </div>
+      <div style="text-align:center"><button class="btn-gold" onclick="createCharacter()" style="padding:11px 32px;font-size:12px;letter-spacing:0.2em">◈ ARISE ◈</button></div>
+      <div style="font-family:'Cinzel',serif;font-size:8px;color:var(--text-dim);text-align:center;margin-top:18px;letter-spacing:0.22em">HUNTER ASSOCIATION · SYSTEM INTERFACE v1.0</div>
+    </div>
+  </div>`;
+}
+function selectClass(cls){selectedClass=cls;document.querySelectorAll('.class-card').forEach(el=>el.classList.remove('selected'));event.currentTarget.classList.add('selected')}
+function createCharacter(){
+  const name=document.getElementById('c-name').value.trim();if(!name){alert('Hunter name is required.');return}
+  state.character={name,title:document.getElementById('c-title').value.trim(),class:selectedClass,xp:0,hp:null,gold:0,stats:{vitality:10,wisdom:10,fortune:10,charisma:10}};
+  state.character.hp=calcHP(10);save();render();
+}
+
+initStarfield();initRunes();render();
+</script>
+</body>
+</html>
