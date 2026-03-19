@@ -1,6 +1,7 @@
 import {
   STORAGE_KEY,
   CATEGORIES,
+  QUEST_DISCIPLINES,
   CLASSES,
   DEFAULT_REWARDS,
   DIFFICULTIES,
@@ -46,7 +47,8 @@ function getStoredTheme() {
 
 let state = loadState();
 let ui = {
-  tab: "overview",
+  tab: "dashboard",
+  disciplineTab: "cycling",
   modal: null,
   syncingStrava: false,
   toasts: [],
@@ -60,6 +62,25 @@ const REWARD_WEIGHTS = [
   { tier: "epic", weight: 4 },
   { tier: "legendary", weight: 1 }
 ];
+
+const QUEST_DISCIPLINE_ORDER = ["cycling", "running", "fasting", "reading", "general"];
+
+function getQuestDisciplineKey(value) {
+  return QUEST_DISCIPLINES[value] ? value : "general";
+}
+
+function getQuestDisciplineMeta(value) {
+  return QUEST_DISCIPLINES[getQuestDisciplineKey(value)];
+}
+
+function compareQuestDisciplineKeys(left, right) {
+  const leftIndex = QUEST_DISCIPLINE_ORDER.indexOf(getQuestDisciplineKey(left));
+  const rightIndex = QUEST_DISCIPLINE_ORDER.indexOf(getQuestDisciplineKey(right));
+  const normalizedLeft = leftIndex === -1 ? QUEST_DISCIPLINE_ORDER.length : leftIndex;
+  const normalizedRight = rightIndex === -1 ? QUEST_DISCIPLINE_ORDER.length : rightIndex;
+
+  return normalizedLeft - normalizedRight || getQuestDisciplineMeta(left).label.localeCompare(getQuestDisciplineMeta(right).label);
+}
 
 function applyTheme() {
   document.documentElement.setAttribute("data-theme", ui.theme);
@@ -169,12 +190,14 @@ function addQuest(formData) {
     .map((name) => String(formData.get(name) || "").trim())
     .filter(Boolean)
     .map((title) => ({ id: uid("bonus"), title, done: false }));
+  const discipline = getQuestDisciplineKey(String(formData.get("discipline") || "general"));
 
   state.quests.push({
     id: uid("quest"),
     title: String(formData.get("title") || "").trim(),
     description: String(formData.get("description") || "").trim(),
     category: String(formData.get("category") || "health"),
+    discipline,
     difficulty: String(formData.get("difficulty") || "easy"),
     state: "available",
     dueDate: String(formData.get("dueDate") || "").trim() || null,
@@ -390,6 +413,23 @@ function updateQuestSettings(formData) {
   pushToast("success", "Quest targets updated.");
 }
 
+function updateRunningSettings(formData) {
+  state.training.running.weeklyRunTarget = Number(formData.get("weeklyRunTarget") || 4);
+  state.training.running.weeklyDistanceTargetKm = Number(formData.get("weeklyDistanceTargetKm") || 40);
+  state.training.running.qualifyingRunKm = Number(formData.get("qualifyingRunKm") || 3);
+  state.training.running.qualifyingRunMinutes = Number(formData.get("qualifyingRunMinutes") || 20);
+  persist();
+  pushToast("success", "Running targets updated.");
+}
+
+function updateReadingSettings(formData) {
+  state.training.reading.dailyPageTarget = Number(formData.get("dailyPageTarget") || 30);
+  state.training.reading.yearlyBookTarget = Number(formData.get("yearlyBookTarget") || 12);
+  state.training.reading.clubMeetingDay = String(formData.get("clubMeetingDay") || "").trim();
+  persist();
+  pushToast("success", "Reading targets updated.");
+}
+
 function removeReward(rewardId) {
   state.rewards = state.rewards.filter((reward) => reward.id !== rewardId);
   persist();
@@ -487,6 +527,7 @@ function questGroups() {
 }
 
 function buildChainGroups() {
+  const terminalStates = new Set(["completed", "failed", "abandoned"]);
   const groups = new Map();
   for (const quest of state.quests) {
     if (!quest.chainId) continue;
@@ -495,10 +536,77 @@ function buildChainGroups() {
     groups.set(quest.chainId, bucket);
   }
 
-  return [...groups.entries()].map(([chainId, quests]) => ({
-    chainId,
-    quests: quests.sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime())
-  }));
+  return [...groups.entries()]
+    .map(([chainId, quests]) => {
+      const sortedQuests = quests.sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
+      const activeQuests = sortedQuests.filter((quest) => !terminalStates.has(quest.state));
+      const disciplineSource = activeQuests.length ? activeQuests : sortedQuests;
+      const disciplineCounts = new Map();
+
+      for (const quest of disciplineSource) {
+        const discipline = getQuestDisciplineKey(quest.discipline);
+        disciplineCounts.set(discipline, (disciplineCounts.get(discipline) || 0) + 1);
+      }
+
+      const disciplineKeys = [...disciplineCounts.entries()]
+        .sort((left, right) => right[1] - left[1] || compareQuestDisciplineKeys(left[0], right[0]))
+        .map(([discipline]) => discipline);
+
+      return {
+        chainId,
+        quests: sortedQuests,
+        activeQuests,
+        isActive: activeQuests.length > 0,
+        primaryDiscipline: disciplineKeys[0] || "general",
+        disciplineKeys
+      };
+    })
+    .sort((left, right) =>
+      Number(right.isActive) - Number(left.isActive) ||
+      compareQuestDisciplineKeys(left.primaryDiscipline, right.primaryDiscipline) ||
+      left.chainId.localeCompare(right.chainId)
+    );
+}
+
+function groupActiveChainsByDiscipline(chains) {
+  const grouped = new Map();
+
+  for (const chain of chains.filter((entry) => entry.isActive)) {
+    const bucket = grouped.get(chain.primaryDiscipline) || [];
+    bucket.push(chain);
+    grouped.set(chain.primaryDiscipline, bucket);
+  }
+
+  return [...grouped.entries()]
+    .sort((left, right) => compareQuestDisciplineKeys(left[0], right[0]))
+    .map(([discipline, disciplineChains]) => ({
+      discipline,
+      chains: disciplineChains.sort((left, right) => left.chainId.localeCompare(right.chainId))
+    }));
+}
+
+function renderDisciplineChainSections(chains, emptyMessage, limitPerDiscipline = Infinity) {
+  const disciplines = groupActiveChainsByDiscipline(chains);
+  if (!disciplines.length) return `<div class="empty-state">${emptyMessage}</div>`;
+
+  return disciplines.map(({ discipline, chains: disciplineChains }) => {
+    const disciplineMeta = getQuestDisciplineMeta(discipline);
+    const visibleChains = disciplineChains.slice(0, limitPerDiscipline);
+    const hiddenCount = Math.max(0, disciplineChains.length - visibleChains.length);
+
+    return `
+      <section class="chain-group">
+        <div class="detail-list chain-group-head">
+          <span class="meta-chip ${disciplineMeta.colorClass}">${escapeHtml(disciplineMeta.label)}</span>
+          <span class="small-meta">${disciplineChains.length} active chain${disciplineChains.length === 1 ? "" : "s"}</span>
+        </div>
+        <div class="chain-panel-list">
+          ${visibleChains.map(renderChainCard).join("")}
+        </div>
+        ${hiddenCount ? `<div class="small-copy chain-group-overflow">+${hiddenCount} more in ${escapeHtml(disciplineMeta.label.toLowerCase())}</div>` : ""}
+      </section>
+    `;
+  }).join("");
 }
 
 function isOverdue(quest) {
@@ -632,27 +740,34 @@ function renderTopbar() {
   const characterRole = state.character
     ? state.character.title || CLASSES[state.character.class].name
     : "Open the Chronicle";
+  const level = state.character ? getLevel(state.character.xp) : 1;
 
   return `
     <header class="topbar">
       <div class="topbar-left">
         <div class="logo-mark">DC</div>
         <div class="topbar-title">
-          <span class="topbar-eyebrow">The System</span>
-          <span class="topbar-name">Discipline Chronicle</span>
+          <span class="topbar-eyebrow">Hunter Protocol</span>
+          <span class="topbar-name">Cadence</span>
         </div>
       </div>
       <div class="topbar-right">
+        ${!state.character ? `
         <button class="theme-toggle" type="button" data-action="toggle-theme" title="Toggle theme">
           ${renderThemeIcon(ui.theme)}
         </button>
-        <div class="profile-chip">
+        ` : ""}
+        ${state.character ? `
+        <div class="profile-chip profile-chip-compact">
           <div class="avatar">${escapeHtml(characterName.slice(0, 2).toUpperCase())}</div>
           <div class="profile-info">
-            <span class="profile-name">${escapeHtml(characterName)}</span>
-            <span class="profile-sub">${escapeHtml(characterRole)}</span>
+            <span class="profile-sub">Level ${level} | ${escapeHtml(characterRole)}</span>
+            <div class="topbar-xp-bar">
+              <div class="topbar-xp-fill" style="width:${state.character ? Math.min(100, Math.round((xpIntoCurrentLevel(state.character.xp) / Math.max(xpForLevel(getLevel(state.character.xp)), 1)) * 100)) : 0}%"></div>
+            </div>
           </div>
         </div>
+        ` : ""}
       </div>
     </header>
   `;
@@ -662,6 +777,7 @@ function renderMetricsStrip() {
   const cyclingSummary = getCyclingSummary(state);
   const fastingSummary = getFastingSummary(state);
   const questSummary = getQuestSummary(state);
+  const resetInfo = getWeeklyResetState();
   const level = getLevel(state.character.xp);
   const xpIn = xpIntoCurrentLevel(state.character.xp);
   const xpNeeded = xpForLevel(level);
@@ -683,6 +799,15 @@ function renderMetricsStrip() {
   const questPct = Math.min(100, Math.round((activeQuests / totalQuests) * 100));
   const levelPct = Math.min(100, xpPct);
 
+  const disciplines = state.disciplines || {};
+  const weekStartMs = (() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() - ((d.getDay()+6)%7)); return d.getTime(); })();
+  const weekRuns = (state.training.running.runs || []).filter(r => new Date(r.startAt).getTime() >= weekStartMs);
+  const weekRunKm = weekRuns.reduce((s, r) => s + r.distanceKm, 0);
+  const runTarget = Math.max(state.training.running.weeklyDistanceTargetKm || 40, 1);
+  const runPct = Math.min(100, Math.round((weekRunKm / runTarget) * 100));
+  const currentBook = (state.training.reading.books || []).find(b => !b.finishedAt);
+  const readPct = currentBook ? Math.min(100, Math.round((currentBook.currentPage / Math.max(currentBook.totalPages, 1)) * 100)) : 0;
+
   return `
     <section class="metrics-strip">
       <div class="mchip mchip-level">
@@ -699,26 +824,51 @@ function renderMetricsStrip() {
         </div>
         <div class="mchip-bar-track"><div class="mchip-bar mchip-bar-cyan" style="width:${xpPct}%"></div></div>
       </div>
+      ${disciplines.cycling !== false ? `
       <div class="mchip mchip-ride">
         <div class="mchip-inner">
-          <span class="mchip-key">KM</span><span class="mchip-sep">/</span><span class="mchip-val mchip-amber">${cyclingSummary.currentWeek.distanceKm.toFixed(1)} km</span>
+          <span class="mchip-key">RIDE</span><span class="mchip-sep">/</span><span class="mchip-val mchip-amber">${cyclingSummary.currentWeek.distanceKm.toFixed(1)} km</span>
           <span class="mchip-note">${cyclingSummary.currentWeek.targetMet ? "target met" : `${cyclingSummary.currentWeek.distanceRemainingKm.toFixed(1)} km left`}</span>
         </div>
         <div class="mchip-bar-track"><div class="mchip-bar mchip-bar-amber" style="width:${ridePct}%"></div></div>
-      </div>
+      </div>` : ""}
+      ${disciplines.running ? `
+      <div class="mchip mchip-run">
+        <div class="mchip-inner">
+          <span class="mchip-key">RUN</span><span class="mchip-sep">/</span><span class="mchip-val mchip-amber">${weekRunKm.toFixed(1)} km</span>
+          <span class="mchip-note">${runPct >= 100 ? "target met" : `${(runTarget - weekRunKm).toFixed(1)} km left`}</span>
+        </div>
+        <div class="mchip-bar-track"><div class="mchip-bar mchip-bar-run" style="width:${runPct}%"></div></div>
+      </div>` : ""}
+      ${disciplines.fasting !== false ? `
       <div class="mchip mchip-fast">
         <div class="mchip-inner">
           <span class="mchip-key">FAST</span><span class="mchip-sep">/</span><span class="mchip-val mchip-violet">${fastingSummary.currentWeek.completedDays}/${fastingSummary.currentWeek.targetDays} days</span>
           <span class="mchip-note">${fastingSummary.currentWeek.targetMet ? "target met" : `${fastingSummary.currentWeek.targetDays - fastingSummary.currentWeek.completedDays} remaining`}</span>
         </div>
         <div class="mchip-bar-track"><div class="mchip-bar mchip-bar-violet" style="width:${fastPct}%"></div></div>
-      </div>
+      </div>` : ""}
+      ${disciplines.reading ? `
+      <div class="mchip mchip-read">
+        <div class="mchip-inner">
+          <span class="mchip-key">READ</span><span class="mchip-sep">/</span><span class="mchip-val mchip-red">${currentBook ? `p.${currentBook.currentPage}` : "no book"}</span>
+          <span class="mchip-note">${currentBook ? `${readPct}% through` : "add a book"}</span>
+        </div>
+        <div class="mchip-bar-track"><div class="mchip-bar mchip-bar-red" style="width:${readPct}%"></div></div>
+      </div>` : ""}
       <div class="mchip mchip-quests">
         <div class="mchip-inner">
-          <span class="mchip-key">QUEST</span><span class="mchip-sep">/</span><span class="mchip-val mchip-green">${activeQuests} active</span>
+          <span class="mchip-key">GOALS</span><span class="mchip-sep">/</span><span class="mchip-val mchip-green">${activeQuests} active</span>
           <span class="mchip-note">${questSummary.overdue ? `${questSummary.overdue} overdue` : "board clear"}</span>
         </div>
         <div class="mchip-bar-track"><div class="mchip-bar mchip-bar-green" style="width:${questPct}%"></div></div>
+      </div>
+      <div class="mchip mchip-reset">
+        <div class="mchip-inner">
+          <span class="mchip-key">RESET</span><span class="mchip-sep">/</span><span class="mchip-val mchip-cyan">${resetInfo.countdown}</span>
+          <span class="mchip-note">${resetInfo.detail}</span>
+        </div>
+        <div class="mchip-bar-track"><div class="mchip-bar mchip-bar-cyan" style="width:100%"></div></div>
       </div>
     </section>
   `;
@@ -824,17 +974,30 @@ function renderTopStats() {
 
 function renderChainCard(chain) {
   const completed = chain.quests.filter((quest) => quest.state === "completed").length;
-  const current = chain.quests.find((quest) => quest.state !== "completed" && prerequisitesComplete(state, quest));
+  const current = (chain.activeQuests || chain.quests).find((quest) => prerequisitesComplete(state, quest));
+  const chainPct = Math.round((completed / Math.max(chain.quests.length, 1)) * 100);
+  const disciplineChips = (chain.disciplineKeys?.length ? chain.disciplineKeys : [chain.primaryDiscipline || "general"]).map((disciplineKey) => {
+    const discipline = getQuestDisciplineMeta(disciplineKey);
+    return `<span class="meta-chip ${discipline.colorClass}">${escapeHtml(discipline.label)}</span>`;
+  }).join("");
+  const stepSegments = chain.quests.map((quest) => {
+    if (quest.state === "completed") return `<div class="chain-step-seg chain-seg-done" title="${escapeHtml(quest.title)}"></div>`;
+    if (quest.state === "in_progress") return `<div class="chain-step-seg chain-seg-active" title="${escapeHtml(quest.title)}"></div>`;
+    if (quest.state === "failed" || quest.state === "abandoned") return `<div class="chain-step-seg chain-seg-failed" title="${escapeHtml(quest.title)}"></div>`;
+    return `<div class="chain-step-seg chain-seg-todo" title="${escapeHtml(quest.title)}"></div>`;
+  }).join("");
   return `
     <article class="chain-card" style="margin-top:10px">
       <div class="quest-head">
         <div>
+          <div class="quest-meta">${disciplineChips}</div>
           <h4>${escapeHtml(chain.chainId)}</h4>
-          <p class="chain-copy">${completed}/${chain.quests.length} steps sealed${current ? ` · Next: ${escapeHtml(current.title)}` : ""}</p>
+          <p class="chain-copy">${completed}/${chain.quests.length} steps complete${current ? ` | Next: ${escapeHtml(current.title)}` : " | All steps closed"}</p>
         </div>
-        <span class="meta-chip">${completed}/${chain.quests.length}</span>
+        <span class="meta-chip">${chainPct}%</span>
       </div>
-      <div class="inline-list">
+      <div class="chain-step-bar">${stepSegments}</div>
+      <div class="inline-list" style="margin-top:6px;">
         ${chain.quests.map((quest) => `<span class="state-pill ${quest.state}">${escapeHtml(quest.title)}</span>`).join("")}
       </div>
     </article>
@@ -912,12 +1075,33 @@ function renderActivityPanel() {
   `;
 }
 
+function getWeeklyResetState(now = new Date()) {
+  const { start, end } = weekRange(now);
+  const resetAt = new Date(end);
+  resetAt.setDate(resetAt.getDate() + 1);
+  resetAt.setHours(0, 0, 0, 0);
+
+  const totalMinutes = Math.max(0, Math.floor((resetAt.getTime() - now.getTime()) / 60000));
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+  const minutes = totalMinutes % 60;
+
+  return {
+    start,
+    end,
+    resetAt,
+    countdown: days ? `${days}d ${hours}h ${minutes}m` : hours ? `${hours}h ${minutes}m` : `${minutes}m`,
+    detail: `Resets ${formatDate(resetAt, { weekday: "short", day: "numeric", month: "short" })} at 00:00`
+  };
+}
+
 function renderFocusPanel(chains, cyclingSummary, fastingSummary) {
   const nextQuest = [...state.quests]
     .filter((quest) => !["completed", "failed", "abandoned"].includes(quest.state))
     .sort((left, right) => new Date(left.dueDate || left.createdAt).getTime() - new Date(right.dueDate || right.createdAt).getTime())[0];
-  const currentChain = chains.find((chain) => chain.quests.some((quest) => quest.state !== "completed"));
-  const currentStep = currentChain?.quests.find((quest) => quest.state !== "completed" && prerequisitesComplete(state, quest));
+  const activeChains = chains.filter((chain) => chain.isActive);
+  const currentChain = activeChains.find((chain) => chain.activeQuests.some((quest) => prerequisitesComplete(state, quest))) || activeChains[0];
+  const currentStep = currentChain?.activeQuests.find((quest) => prerequisitesComplete(state, quest));
   const rideRemaining = Math.max(0, state.training.cycling.weeklyRideTarget - cyclingSummary.currentWeek.rideCount);
   const fastRemaining = Math.max(0, state.training.fasting.weeklyTargetDays - fastingSummary.currentWeek.completedDays);
 
@@ -948,8 +1132,8 @@ function renderFocusPanel(chains, cyclingSummary, fastingSummary) {
     <article class="page">
       <div class="page-title-row">
         <div>
-          <p class="page-kicker">System Notes</p>
-          <h2 class="page-title">Focus Queue</h2>
+          <p class="page-kicker">Focus</p>
+          <h2 class="page-title">Active Goals</h2>
           <p class="page-copy">The next few moves worth protecting before the week gets noisy.</p>
         </div>
       </div>
@@ -966,21 +1150,20 @@ function renderFocusPanel(chains, cyclingSummary, fastingSummary) {
 }
 
 function renderChainPanel(chains) {
+  const activeChainCount = chains.filter((chain) => chain.isActive).length;
+
   return `
     <article class="page">
       <div class="page-title-row">
         <div>
-          <p class="page-kicker">Quest Chains</p>
+          <p class="page-kicker">Goal Series</p>
           <h2 class="page-title">Active Chains</h2>
-          <p class="page-copy">Multi-step threads stay visible here so the larger story does not disappear under daily tasks.</p>
+          <p class="page-copy">Multi-step plans stay visible here, grouped by discipline so the bigger picture is easier to scan.</p>
         </div>
       </div>
       <div class="section-stack chain-panel-list">
-        ${
-          chains.length
-            ? chains.slice(0, 4).map(renderChainCard).join("")
-            : `<div class="empty-state">Add a chain name to quests when you want multi-step campaigns.</div>`
-        }
+        ${renderDisciplineChainSections(chains, "Add a chain name to quests when you want multi-step campaigns.", 2)}
+        ${activeChainCount > 4 ? `<div class="small-copy">Showing up to 2 chains per discipline.</div>` : ""}
       </div>
     </article>
   `;
@@ -992,6 +1175,7 @@ function renderOverview() {
   const fastingSummary = getFastingSummary(state);
   const questSummary = getQuestSummary(state);
   const chains = buildChainGroups();
+  const activeChainCount = chains.filter((chain) => chain.isActive).length;
   const level = getLevel(state.character.xp);
   const xpIntoLevel = xpIntoCurrentLevel(state.character.xp);
   const xpNeeded = xpForLevel(level);
@@ -1000,18 +1184,19 @@ function renderOverview() {
   return `
     ${renderTopStats()}
     <section class="page-spread overview-primary">
+      <div class="overview-stack">
       <article class="page panel">
         <div class="panel-header">
-          <span class="panel-title">Character Ledger</span>
+          <span class="panel-title">Combat Record</span>
           <span class="panel-badge">Level ${level}</span>
         </div>
         <div class="panel-body">
           <div>
             <div class="char-name">${escapeHtml(state.character.name)}</div>
-            <div class="char-class">${escapeHtml(state.character.title || "No title chosen yet")} - ${escapeHtml(CLASSES[state.character.class].bonus)}</div>
+            <div class="char-class">${escapeHtml(state.character.title || "No title chosen yet")} · ${escapeHtml(CLASSES[state.character.class].bonus)}</div>
           </div>
           <div class="xp-row">
-            <span class="xp-label">Experience</span>
+            <span class="xp-label">Experience · ${xpPercent}% to Level ${level + 1}</span>
             <span class="xp-val">${xpIntoLevel} <span>/ ${xpNeeded}</span></span>
             <div class="progress-shell"><div class="progress-fill" style="width:${xpPercent}%"></div></div>
           </div>
@@ -1019,71 +1204,40 @@ function renderOverview() {
             <div class="card">
               <div class="summary-label">Health</div>
               <div class="summary-value">${calculateHp(state.character)}</div>
-              <div class="small-copy">HP ledger</div>
+              <div class="small-copy">HP pool</div>
             </div>
             <div class="card">
               <div class="summary-label">Focus</div>
               <div class="summary-value">${calculateMp(state.character)}</div>
-              <div class="small-copy">MP ledger</div>
+              <div class="small-copy">MP pool</div>
             </div>
             <div class="card">
               <div class="summary-label">Gold</div>
               <div class="summary-value">${state.character.gold}</div>
-              <div class="small-copy">Treasury held</div>
+              <div class="small-copy">Treasury</div>
             </div>
             <div class="card">
-              <div class="summary-label">Quest Streak</div>
+              <div class="summary-label">Goal Streak</div>
               <div class="summary-value">${state.stats.questDayStreakCurrent}</div>
-              <div class="small-copy">Longest ${state.stats.questDayStreakLongest}</div>
+              <div class="small-copy" style="display:flex;flex-direction:column;gap:3px;">
+                <span>Best ${state.stats.questDayStreakLongest} days</span>
+                <div class="progress-shell" style="margin-top:2px;"><div class="progress-fill" style="width:${Math.min(100, Math.round((state.stats.questDayStreakCurrent / Math.max(state.stats.questDayStreakLongest || 1, 1)) * 100))}%;background:var(--green);"></div></div>
+              </div>
             </div>
           </div>
         </div>
       </article>
+      ${renderFocusPanel(chains, cyclingSummary, fastingSummary)}
+      </div>
       <article class="page panel">
         <div class="panel-header">
-          <span class="panel-title">This Week</span>
+          <span class="panel-title">Active Chains</span>
+          <span class="panel-badge">${activeChainCount} chain${activeChainCount === 1 ? "" : "s"}</span>
         </div>
         <div class="panel-body">
-          <div>
-            <div class="week-title">This Week</div>
-            <div class="week-sub">Ride enough, fast enough, keep the quest board moving.</div>
-          </div>
-          <div class="campaign-item">
-            <div class="campaign-item-header">
-              <span class="campaign-item-label">Cycling</span>
-              <span class="status-tag ${cyclingSummary.currentWeek.targetMet ? "status-met" : "status-streak"}">${cyclingSummary.currentWeek.targetMet ? "Target Met" : "In Progress"}</span>
-            </div>
-            <div class="campaign-item-body">
-              <div class="campaign-stat">${cyclingSummary.currentWeek.rideCount}/${state.training.cycling.weeklyRideTarget} qualifying rides</div>
-              <div class="campaign-desc">${formatDistanceKm(cyclingSummary.currentWeek.distanceKm)} this week. ${cyclingSummary.currentWeek.ridesRemaining} ride${cyclingSummary.currentWeek.ridesRemaining === 1 ? "" : "s"} to hit the count target.</div>
-            </div>
-          </div>
-          <div class="campaign-item">
-            <div class="campaign-item-header">
-              <span class="campaign-item-label">Fasting</span>
-              <span class="status-tag ${fastingSummary.currentWeek.targetMet ? "status-met" : "status-streak"}">${fastingSummary.currentWeek.targetMet ? "Target Met" : `${fastingSummary.streak.current} Day Streak`}</span>
-            </div>
-            <div class="campaign-item-body">
-              <div class="campaign-stat">${fastingSummary.currentWeek.completedDays}/${fastingSummary.currentWeek.targetDays} target fasts</div>
-              <div class="campaign-desc">Target hours: ${state.training.fasting.targetHours}. This week is about calm consistency, not perfection.</div>
-            </div>
-          </div>
-          <div class="campaign-item">
-            <div class="campaign-item-header">
-              <span class="campaign-item-label">Quest Board</span>
-              ${questSummary.overdue ? `<span class="status-tag status-streak">${questSummary.overdue} overdue</span>` : ""}
-            </div>
-            <div class="campaign-item-body">
-              <div class="campaign-stat">${questSummary.inProgress} in progress - ${questSummary.available} available</div>
-              <div class="campaign-desc">${questSummary.closed} quests recorded. Keep the chain moving, not just the to-do list.</div>
-            </div>
-          </div>
+          ${renderDisciplineChainSections(chains, "No active chains yet. Give related goals the same chain name to group them.", 2)}
         </div>
       </article>
-    </section>
-    <section class="page-spread dashboard-support-row">
-      ${renderFocusPanel(chains, cyclingSummary, fastingSummary)}
-      ${renderActivityPanel()}
     </section>
   `;
 }
@@ -1093,12 +1247,14 @@ function renderQuestCard(quest) {
   const questNames = getQuestNameMap(state);
   const completedBonuses = countQuestBonuses(quest);
   const reward = computeQuestReward(state, quest);
+  const disciplineMeta = quest.discipline && quest.discipline !== "general" ? getQuestDisciplineMeta(quest.discipline) : null;
 
   return `
     <article class="quest-card">
       <div class="quest-head">
         <div>
           <div class="quest-meta">
+            ${disciplineMeta ? `<span class="meta-chip ${disciplineMeta.colorClass}">${escapeHtml(disciplineMeta.label)}</span>` : ""}
             <span class="meta-chip ${CATEGORIES[quest.category].colorClass}">${escapeHtml(CATEGORIES[quest.category].label)}</span>
             <span class="meta-chip">${escapeHtml(DIFFICULTIES[quest.difficulty].label)}</span>
             ${quest.chainId ? `<span class="meta-chip">Chain ${escapeHtml(quest.chainId)}</span>` : ""}
@@ -1196,8 +1352,8 @@ function renderQuests() {
         </div>
         <div class="section-stack">
           <div class="card">
-            <div class="section-label">Quest Chains</div>
-            ${chainGroups.length ? chainGroups.map(renderChainCard).join("") : `<div class="empty-state">Create a quest chain by giving related quests the same chain name.</div>`}
+            <div class="section-label">Active Chains by Discipline</div>
+            ${renderDisciplineChainSections(chainGroups, "Create a quest chain by giving related quests the same chain name.")}
           </div>
           <div class="card">
             <div class="section-label">History</div>
@@ -1487,12 +1643,13 @@ function renderRewards() {
 
 function renderSettings() {
   const strava = state.training.cycling.strava;
+  const disc = state.disciplines || {};
   return `
     <section class="page-spread">
       <article class="page">
         <div class="page-title-row">
           <div>
-            <p class="page-kicker">Connections and Targets</p>
+            <p class="page-kicker">Connections, Disciplines and Targets</p>
             <h2 class="page-title">Operational Settings</h2>
             <p class="page-copy">These settings shape the streak logic, weekly thresholds, and how cycling data enters the journal.</p>
           </div>
@@ -1568,6 +1725,65 @@ function renderSettings() {
             </div>
           </form>
           <div class="settings-card form-shell">
+            <div class="section-label">Disciplines</div>
+            <div class="small-copy">Enable or disable tracking modules. Disabled disciplines hide from nav and metrics strip.</div>
+            <div class="field-grid" style="gap:6px;margin-top:4px;">
+              ${[["cycling","Cycling","Strava sync · ride streak · weekly km"],["running","Running","Strava sync · run streak · weekly km"],["fasting","Fasting","Manual logs · streak · weekly targets"],["reading","Reading","Book tracker · reading streak · club dates"]].map(([key, label, desc]) => {
+                const isEnabled = key === "cycling" || key === "fasting" ? disc[key] !== false : Boolean(disc[key]);
+                return `<label class="check-row" style="align-items:center;">
+                  <input type="checkbox" data-discipline-toggle="${escapeHtml(key)}" ${isEnabled ? "checked" : ""}>
+                  <span><strong>${escapeHtml(label)}</strong> — ${escapeHtml(desc)}</span>
+                </label>`;
+              }).join("")}
+            </div>
+          </div>
+          ${disc.running ? `
+          <form class="settings-card form-shell" data-form="running-settings">
+            <div class="section-label">Running thresholds</div>
+            <div class="field-grid two">
+              <div>
+                <label class="form-label" for="weeklyRunTarget">Weekly run target</label>
+                <input class="text-input" id="weeklyRunTarget" name="weeklyRunTarget" type="number" min="1" max="14" value="${state.training.running.weeklyRunTarget}">
+              </div>
+              <div>
+                <label class="form-label" for="weeklyRunDistanceTarget">Weekly distance target (km)</label>
+                <input class="text-input" id="weeklyRunDistanceTarget" name="weeklyDistanceTargetKm" type="number" min="1" max="500" value="${state.training.running.weeklyDistanceTargetKm}">
+              </div>
+              <div>
+                <label class="form-label" for="qualifyingRunKm">Qualifying run distance (km)</label>
+                <input class="text-input" id="qualifyingRunKm" name="qualifyingRunKm" type="number" min="0.5" max="100" step="0.5" value="${state.training.running.qualifyingRunKm}">
+              </div>
+              <div>
+                <label class="form-label" for="qualifyingRunMinutes">Qualifying run duration (min)</label>
+                <input class="text-input" id="qualifyingRunMinutes" name="qualifyingRunMinutes" type="number" min="1" max="600" value="${state.training.running.qualifyingRunMinutes}">
+              </div>
+            </div>
+            <div class="settings-actions">
+              <button class="primary-button" type="submit">Save running targets</button>
+            </div>
+          </form>` : ""}
+          ${disc.reading ? `
+          <form class="settings-card form-shell" data-form="reading-settings">
+            <div class="section-label">Reading targets</div>
+            <div class="field-grid two">
+              <div>
+                <label class="form-label" for="dailyPageTarget">Daily page target</label>
+                <input class="text-input" id="dailyPageTarget" name="dailyPageTarget" type="number" min="1" max="500" value="${state.training.reading.dailyPageTarget}">
+              </div>
+              <div>
+                <label class="form-label" for="yearlyBookTarget">Yearly book target</label>
+                <input class="text-input" id="yearlyBookTarget" name="yearlyBookTarget" type="number" min="1" max="200" value="${state.training.reading.yearlyBookTarget}">
+              </div>
+              <div>
+                <label class="form-label" for="clubMeetingDay">Club meeting day</label>
+                <input class="text-input" id="clubMeetingDay" name="clubMeetingDay" placeholder="e.g. Friday" value="${safeAttr(state.training.reading.clubMeetingDay || "")}">
+              </div>
+            </div>
+            <div class="settings-actions">
+              <button class="primary-button" type="submit">Save reading targets</button>
+            </div>
+          </form>` : ""}
+          <div class="settings-card form-shell">
             <div class="section-label">Backup</div>
             <div class="small-copy">Export the full chronicle as JSON or import a previous backup.</div>
             <div class="settings-actions">
@@ -1587,21 +1803,21 @@ function renderSettings() {
 
 function renderSidebarIcon(kind) {
   const icons = {
-    overview: `
+    dashboard: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <rect x="4" y="4" width="6" height="6"></rect>
         <rect x="14" y="4" width="6" height="6"></rect>
         <rect x="4" y="14" width="6" height="6"></rect>
         <rect x="14" y="14" width="6" height="6"></rect>
       </svg>`,
-    quests: `
+    goals: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M8 4h8a2 2 0 0 1 2 2v14H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"></path>
         <path d="M9.5 8.5h5"></path>
         <path d="m9.5 13 1.5 1.5 3.5-3.5"></path>
         <path d="M9.5 17.5h5"></path>
       </svg>`,
-    cycling: `
+    disciplines: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="6.5" cy="17.5" r="3.5"></circle>
         <circle cx="17.5" cy="17.5" r="3.5"></circle>
@@ -1610,20 +1826,12 @@ function renderSidebarIcon(kind) {
         <path d="M8.25 10H11"></path>
         <path d="M13 10 10 17.5"></path>
       </svg>`,
-    fasting: `
+    journal: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M8 4h8"></path>
-        <path d="M8 20h8"></path>
-        <path d="M9 4c0 3 2 4.5 3 5 1-.5 3-2 3-5"></path>
-        <path d="M9 20c0-3 2-4.5 3-5 1 .5 3 2 3 5"></path>
-      </svg>`,
-    rewards: `
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M5 8h14v12H5z"></path>
-        <path d="M4 10.5h16"></path>
-        <path d="M12 8v12"></path>
-        <path d="M12 8c-2.2 0-3-1.4-3-2.5A1.5 1.5 0 0 1 10.5 4C12 4 12 6 12 8Z"></path>
-        <path d="M12 8c2.2 0 3-1.4 3-2.5A1.5 1.5 0 0 0 13.5 4C12 4 12 6 12 8Z"></path>
+        <path d="M4 4h16v16H4z"></path>
+        <path d="M8 8h8"></path>
+        <path d="M8 12h8"></path>
+        <path d="M8 16h5"></path>
       </svg>`,
     settings: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1641,25 +1849,39 @@ function renderSidebarIcon(kind) {
 
 function renderTabs() {
   const tabs = [
-    ["overview", "Overview", "overview"],
-    ["quests", "Quests", "quests"],
-    ["cycling", "Cycling", "cycling"],
-    ["fasting", "Fasting", "fasting"],
-    ["settings", "Settings", "settings"]
+    ["dashboard", "Dashboard", "Weekly snapshot", "dashboard"],
+    ["goals", "Goals", "Tasks and series", "goals"],
+    ["disciplines", "Disciplines", "Cycling, running, fasting, reading", "disciplines"],
+    ["journal", "Journal", "Full activity history", "journal"],
+    ["settings", "Settings", "Thresholds, sync, and modules", "settings"]
   ];
 
   return `
-    <nav class="sidebar">
-      ${tabs.map(([key, label, icon], index) => `
+    <nav class="sidebar" aria-label="Primary">
+      <div class="sidebar-brand">
+        <div class="sidebar-brand-mark">DC</div>
+        <div class="sidebar-brand-copy">
+          <span class="sidebar-eyebrow">Cadence</span>
+          <span class="sidebar-title">Discipline Chronicle</span>
+        </div>
+      </div>
+      <div class="sidebar-section-label">Navigate</div>
+      <div class="sidebar-nav">
+      ${tabs.map(([key, label, description, icon]) => `
         <button
-          class="nav-btn ${ui.tab === key ? "active" : ""} ${index === tabs.length - 1 ? "nav-btn-bottom" : ""}"
+          class="nav-btn ${ui.tab === key ? "active" : ""}"
           type="button"
           data-tab="${key}"
           title="${escapeHtml(label)}"
           aria-label="${escapeHtml(label)}"
         >
-          ${renderSidebarIcon(icon)}
+          <span class="nav-btn-icon">${renderSidebarIcon(icon)}</span>
+          <span class="nav-btn-copy">
+            <span class="nav-btn-label">${escapeHtml(label)}</span>
+            <span class="nav-btn-desc">${escapeHtml(description)}</span>
+          </span>
         </button>`).join("")}
+      </div>
     </nav>
   `;
 }
@@ -1669,28 +1891,43 @@ function renderShellHeader() {
   const greeting = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
 
   function getContextualTagline() {
-    if (ui.tab === "cycling") {
-      const s = getCyclingSummary(state);
-      if (s.currentWeek.targetMet) return `Ride target met this week. ${s.dayStreak.current > 1 ? `${s.dayStreak.current}-day streak running.` : ""}`;
-      return `${s.currentWeek.ridesRemaining} ride${s.currentWeek.ridesRemaining === 1 ? "" : "s"} left to hit the weekly target. ${s.currentWeek.distanceRemainingKm.toFixed(1)} km to go.`;
+    if (ui.tab === "disciplines") {
+      const dt = ui.disciplineTab;
+      if (dt === "cycling") {
+        const s = getCyclingSummary(state);
+        if (s.currentWeek.targetMet) return `Ride target met this week. ${s.dayStreak.current > 1 ? `${s.dayStreak.current}-day streak running.` : ""}`;
+        return `${s.currentWeek.ridesRemaining} ride${s.currentWeek.ridesRemaining === 1 ? "" : "s"} left to hit the weekly target. ${s.currentWeek.distanceRemainingKm.toFixed(1)} km to go.`;
+      }
+      if (dt === "running") {
+        const runs = state.training.running.runs || [];
+        const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+        const weekRuns = runs.filter(r => new Date(r.startAt) >= weekStart);
+        const remaining = Math.max(0, state.training.running.weeklyRunTarget - weekRuns.length);
+        return remaining ? `${remaining} run${remaining === 1 ? "" : "s"} left this week.` : "Run target met this week.";
+      }
+      if (dt === "fasting") {
+        const s = getFastingSummary(state);
+        if (s.currentWeek.targetMet) return `Fasting target met this week. ${s.streak.current > 1 ? `${s.streak.current}-day streak active.` : ""}`;
+        return `${s.currentWeek.targetDays - s.currentWeek.completedDays} fast${s.currentWeek.targetDays - s.currentWeek.completedDays === 1 ? "" : "s"} remaining this week.`;
+      }
+      if (dt === "reading") {
+        const currentBook = (state.training.reading.books || []).find(b => !b.finishedAt);
+        return currentBook ? `Reading ${escapeHtml(currentBook.title)} · p.${currentBook.currentPage} of ${currentBook.totalPages}` : "No book in progress. Add one to start tracking.";
+      }
     }
-    if (ui.tab === "fasting") {
-      const s = getFastingSummary(state);
-      if (s.currentWeek.targetMet) return `Fasting target met this week. ${s.streak.current > 1 ? `${s.streak.current}-day streak active.` : ""}`;
-      return `${s.currentWeek.targetDays - s.currentWeek.completedDays} fast${s.currentWeek.targetDays - s.currentWeek.completedDays === 1 ? "" : "s"} remaining this week. ${state.training.fasting.targetHours} hr window qualifies.`;
-    }
-    if (ui.tab === "quests") {
+    if (ui.tab === "goals") {
       const s = getQuestSummary(state);
-      if (s.overdue) return `${s.overdue} overdue quest${s.overdue === 1 ? "" : "s"} need attention. ${s.inProgress} in progress.`;
-      return `${s.inProgress} quest${s.inProgress === 1 ? "" : "s"} in progress. ${s.available} available to start.`;
+      if (s.overdue) return `${s.overdue} overdue goal${s.overdue === 1 ? "" : "s"} need attention. ${s.inProgress} in progress.`;
+      return `${s.inProgress} goal${s.inProgress === 1 ? "" : "s"} in progress. ${s.available} available to start.`;
     }
-    if (ui.tab === "settings") return "Adjust thresholds and sync rules before the next run.";
-    // overview
+    if (ui.tab === "journal") return "Your full activity log — every ride, fast, read, and goal in one place.";
+    if (ui.tab === "settings") return "Adjust thresholds, disciplines, and sync rules.";
+    // dashboard
     const questSummary = getQuestSummary(state);
-    if (questSummary.overdue) return `${questSummary.overdue} overdue quest${questSummary.overdue === 1 ? "" : "s"} on the board. Deal with those first.`;
+    if (questSummary.overdue) return `${questSummary.overdue} overdue goal${questSummary.overdue === 1 ? "" : "s"} on the board. Deal with those first.`;
     const riding = getCyclingSummary(state);
     if (!riding.currentWeek.targetMet) return `${riding.currentWeek.ridesRemaining} ride${riding.currentWeek.ridesRemaining === 1 ? "" : "s"} left this week. ${riding.currentWeek.distanceKm.toFixed(1)} km logged so far.`;
-    return `Weekly targets on track. ${questSummary.inProgress} quest${questSummary.inProgress === 1 ? "" : "s"} in progress.`;
+    return `Weekly targets on track. ${questSummary.inProgress} goal${questSummary.inProgress === 1 ? "" : "s"} in progress.`;
   }
 
   return `
@@ -1701,8 +1938,11 @@ function renderShellHeader() {
         <p class="tagline">${escapeHtml(getContextualTagline())}</p>
       </div>
       <div class="header-actions">
-        <button class="btn btn-primary" type="button" data-action="open-modal" data-modal="${ui.tab === "cycling" ? "ride" : ui.tab === "fasting" ? "fast" : "quest"}">
-          ${ui.tab === "cycling" ? "Log ride" : ui.tab === "fasting" ? "Log fast" : "New quest"}
+        <button class="theme-toggle" type="button" data-action="toggle-theme" title="Toggle theme">
+          ${renderThemeIcon(ui.theme)}
+        </button>
+        <button class="btn btn-primary" type="button" data-action="open-modal" data-modal="${ui.tab === "disciplines" && ui.disciplineTab === "cycling" ? "ride" : ui.tab === "disciplines" && ui.disciplineTab === "running" ? "run" : ui.tab === "disciplines" && ui.disciplineTab === "fasting" ? "fast" : ui.tab === "disciplines" && ui.disciplineTab === "reading" ? "book" : "quest"}">
+          ${ui.tab === "disciplines" && ui.disciplineTab === "cycling" ? "Log ride" : ui.tab === "disciplines" && ui.disciplineTab === "running" ? "Log run" : ui.tab === "disciplines" && ui.disciplineTab === "fasting" ? "Log fast" : ui.tab === "disciplines" && ui.disciplineTab === "reading" ? "Add book" : "New goal"}
         </button>
       </div>
     </section>
@@ -1850,11 +2090,292 @@ function renderOnboarding() {
   `;
 }
 
+
+// ── RUNNING PANEL ──────────────────────────────────────────────────
+function getRunSummary() {
+  const running = state.training.running;
+  const runs = [...(running.runs || [])].sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
+  const weekStart = new Date(); weekStart.setHours(0,0,0,0); weekStart.setDate(weekStart.getDate() - ((weekStart.getDay()+6)%7));
+  const weekRuns = runs.filter(r => new Date(r.startAt) >= weekStart);
+  const weekKm = weekRuns.reduce((s, r) => s + r.distanceKm, 0);
+  const weekMins = weekRuns.reduce((s, r) => s + r.movingTimeMin, 0);
+  const avgPace = weekRuns.length ? weekRuns.reduce((s, r) => s + (r.avgPaceMinPerKm || 0), 0) / weekRuns.length : 0;
+  const runDays = [...new Set(runs.map(r => toDateKey(r.startAt)))].sort();
+  let streak = 0;
+  for (let i = runDays.length - 1; i >= 0; i--) {
+    const expected = toDateKey(new Date(Date.now() - (runDays.length - 1 - i) * 86400000));
+    if (runDays[i] === toDateKey(new Date(Date.now() - streak * 86400000))) streak++;
+    else break;
+  }
+  return { runs, weekRuns, weekKm, weekMins, avgPace, streak,
+    runsRemaining: Math.max(0, running.weeklyRunTarget - weekRuns.length),
+    kmRemaining: Math.max(0, running.weeklyDistanceTargetKm - weekKm),
+    targetMet: weekRuns.length >= running.weeklyRunTarget || weekKm >= running.weeklyDistanceTargetKm
+  };
+}
+
+function formatPace(minPerKm) {
+  if (!minPerKm) return "—";
+  const mins = Math.floor(minPerKm);
+  const secs = Math.round((minPerKm - mins) * 60);
+  return `${mins}:${String(secs).padStart(2, "0")} /km`;
+}
+
+function renderRunningPanel() {
+  const summary = getRunSummary();
+  const running = state.training.running;
+  const streakProgress = Math.min(100, Math.round((summary.streak / Math.max(summary.streak || 1, 7)) * 100));
+  const weeklyRunProgress = Math.min(100, Math.round((summary.weekRuns.length / Math.max(running.weeklyRunTarget, 1)) * 100));
+  const weeklyDistProgress = Math.min(100, Math.round((summary.weekKm / Math.max(running.weeklyDistanceTargetKm, 1)) * 100));
+  const paceProgress = summary.avgPace ? Math.min(100, Math.round(((8 - Math.min(summary.avgPace, 8)) / 8) * 100)) : 0;
+
+  return `
+    <article class="page">
+      <div class="page-title-row">
+        <div>
+          <p class="page-kicker">Running Discipline</p>
+          <h2 class="page-title">Run Ledger</h2>
+          <p class="page-copy">Every qualifying run feeds the streak and the weekly distance target.</p>
+        </div>
+        <button class="primary-button" data-action="open-modal" data-modal="run">Log run</button>
+      </div>
+      <div class="section-stack">
+        <div class="metric-grid ring-metric-grid">
+          ${renderSummaryCard({ label: "Run Streak", value: `${summary.streak} days`, note: `${summary.weekRuns.length} runs this week`, ringValue: `${summary.streak}d`, progress: streakProgress, accentClass: "accent-orange" })}
+          ${renderSummaryCard({ label: "Weekly Runs", value: `${summary.weekRuns.length}/${running.weeklyRunTarget}`, note: `${summary.runsRemaining} runs remaining`, ringValue: `${summary.weekRuns.length}`, ringUnit: "runs", progress: weeklyRunProgress, accentClass: "accent-cyan" })}
+          ${renderSummaryCard({ label: "Weekly Distance", value: `${summary.weekKm.toFixed(1)} km`, note: `${summary.kmRemaining.toFixed(1)} km to target`, ringValue: `${Math.round(summary.weekKm)}`, ringUnit: "km", progress: weeklyDistProgress, accentClass: "accent-yellow" })}
+          ${renderSummaryCard({ label: "Avg Pace", value: formatPace(summary.avgPace), note: "This week's average", ringValue: summary.avgPace ? summary.avgPace.toFixed(1) : "—", ringUnit: "min", progress: paceProgress, accentClass: "accent-violet" })}
+        </div>
+        <div class="card">
+          <div class="section-label">Recent Runs</div>
+          <div class="ride-list">
+            ${summary.runs.length
+              ? summary.runs.slice(0, 10).map(run => `
+                <article class="training-card">
+                  <div class="training-head">
+                    <div>
+                      <h4>${escapeHtml(run.name)}</h4>
+                      <p class="training-copy">${escapeHtml(formatDate(run.startAt, { weekday: "short", day: "numeric", month: "short" }))} · ${formatDistanceKm(run.distanceKm)} · ${formatMinutes(run.movingTimeMin)}${run.avgPaceMinPerKm ? ` · ${formatPace(run.avgPaceMinPerKm)}` : ""}</p>
+                    </div>
+                    <span class="meta-chip">${escapeHtml(run.source)}</span>
+                  </div>
+                  <div class="small-copy">${escapeHtml(run.note || "No note recorded yet.")}</div>
+                </article>`).join("")
+              : `<div class="empty-state">No runs logged yet. Log your first run to start the streak engine.</div>`
+            }
+          </div>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+// ── READING PANEL ──────────────────────────────────────────────────
+function renderReadingPanel() {
+  const reading = state.training.reading;
+  const books = reading.books || [];
+  const sessions = reading.sessions || [];
+  const currentBook = books.find(b => !b.finishedAt);
+  const finishedBooks = books.filter(b => b.finishedAt);
+  const todaySessions = sessions.filter(s => toDateKey(s.date) === toDateKey(new Date()));
+  const todayPages = todaySessions.reduce((sum, s) => sum + (s.pages || 0), 0);
+  const readPct = currentBook ? Math.min(100, Math.round((currentBook.currentPage / Math.max(currentBook.totalPages, 1)) * 100)) : 0;
+  const yearProgress = Math.min(100, Math.round((finishedBooks.length / Math.max(reading.yearlyBookTarget, 1)) * 100));
+  const pageProgress = Math.min(100, Math.round((todayPages / Math.max(reading.dailyPageTarget, 1)) * 100));
+
+  const readStreak = (() => {
+    const days = [...new Set(sessions.map(s => toDateKey(s.date)))].sort();
+    let streak = 0;
+    for (let i = days.length - 1; i >= 0; i--) {
+      if (days[i] === toDateKey(new Date(Date.now() - streak * 86400000))) streak++;
+      else break;
+    }
+    return streak;
+  })();
+
+  return `
+    <article class="page">
+      <div class="page-title-row">
+        <div>
+          <p class="page-kicker">Reading Discipline</p>
+          <h2 class="page-title">Reading Ledger</h2>
+          <p class="page-copy">Track current reads, log sessions, and keep the book club honest.${reading.clubMeetingDay ? ` Club meets ${escapeHtml(reading.clubMeetingDay)}.` : ""}</p>
+        </div>
+        <button class="primary-button" data-action="open-modal" data-modal="book">Add book</button>
+      </div>
+      <div class="section-stack">
+        <div class="metric-grid ring-metric-grid">
+          ${renderSummaryCard({ label: "Reading Streak", value: `${readStreak} days`, note: "Consecutive days with a session", ringValue: `${readStreak}d`, progress: Math.min(100, readStreak * 7), accentClass: "accent-cyan" })}
+          ${renderSummaryCard({ label: "Books This Year", value: `${finishedBooks.length} / ${reading.yearlyBookTarget}`, note: `${reading.yearlyBookTarget - finishedBooks.length} remaining this year`, ringValue: `${finishedBooks.length}`, ringUnit: "done", progress: yearProgress, accentClass: "accent-violet" })}
+          ${renderSummaryCard({ label: "Pages Today", value: `${todayPages} pages`, note: `Target ${reading.dailyPageTarget} pages/day`, ringValue: `${todayPages}`, ringUnit: "pg", progress: pageProgress, accentClass: "accent-orange" })}
+          ${renderSummaryCard({ label: "Current Progress", value: currentBook ? `${readPct}% through` : "No book active", note: currentBook ? escapeHtml(currentBook.title) : "Add a book to begin", ringValue: currentBook ? `${readPct}%` : "0%", progress: readPct, accentClass: "accent-yellow" })}
+        </div>
+        ${currentBook ? `
+        <div class="card">
+          <div class="section-label">Currently Reading</div>
+          <article class="book-card">
+            <div class="book-spine" style="background:${escapeHtml(currentBook.color || "#1e293b")}">${escapeHtml(currentBook.initials || "?")}</div>
+            <div class="book-info">
+              <div class="book-title">${escapeHtml(currentBook.title)}</div>
+              <div class="book-author">${escapeHtml(currentBook.author)}${currentBook.clubPick ? " · Club pick" : ""}</div>
+              <div class="book-progress-bar"><div class="book-progress-fill" style="width:${readPct}%"></div></div>
+              <div class="book-progress-label">p.${currentBook.currentPage} of ${currentBook.totalPages} · ${readPct}% complete</div>
+            </div>
+            <button class="ghost-button" data-action="open-modal" data-modal="reading-session">Log session</button>
+          </article>
+        </div>` : `<div class="empty-state">No book in progress. Add a book to start tracking your reading.</div>`}
+        ${finishedBooks.length ? `
+        <div class="card">
+          <div class="section-label">Completed Reads</div>
+          <div class="section-stack">
+            ${finishedBooks.map(book => `
+              <article class="book-card">
+                <div class="book-spine" style="background:${escapeHtml(book.color || "#1e293b")}">${escapeHtml(book.initials || "?")}</div>
+                <div class="book-info">
+                  <div class="book-title">${escapeHtml(book.title)}</div>
+                  <div class="book-author">${escapeHtml(book.author)} · Finished ${escapeHtml(formatDate(book.finishedAt, { day: "numeric", month: "short", year: "numeric" }))}</div>
+                  ${book.note ? `<div class="small-copy" style="margin-top:4px">${escapeHtml(book.note)}</div>` : ""}
+                </div>
+                <span class="wax-badge">done</span>
+              </article>`).join("")}
+          </div>
+        </div>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+// ── DISCIPLINES TAB ────────────────────────────────────────────────
+function renderDisciplines() {
+  const disciplines = state.disciplines || {};
+  const enabledTabs = [];
+  if (disciplines.cycling !== false) enabledTabs.push(["cycling", "Cycling"]);
+  if (disciplines.running) enabledTabs.push(["running", "Running"]);
+  if (disciplines.fasting !== false) enabledTabs.push(["fasting", "Fasting"]);
+  if (disciplines.reading) enabledTabs.push(["reading", "Reading"]);
+
+  if (!enabledTabs.length) {
+    return `<div class="empty-state">No disciplines enabled. Enable them in Settings.</div>`;
+  }
+
+  if (!enabledTabs.find(([k]) => k === ui.disciplineTab)) {
+    ui.disciplineTab = enabledTabs[0][0];
+  }
+
+  const currentIndex = enabledTabs.findIndex(([k]) => k === ui.disciplineTab);
+
+  const subNav = `
+    <div class="discipline-subnav" id="discipline-subnav">
+      ${enabledTabs.map(([key, label], i) => `
+        <button class="discipline-tab ${ui.disciplineTab === key ? "active" : ""}" data-discipline-tab="${escapeHtml(key)}">
+          ${escapeHtml(label)}
+          ${enabledTabs.length > 1 ? `<span class="disc-tab-hint">${i + 1}/${enabledTabs.length}</span>` : ""}
+        </button>
+      `).join("")}
+      ${enabledTabs.length > 1 ? `
+        <div class="disc-scroll-hint">
+          ${currentIndex > 0 ? `<span class="disc-arrow disc-arrow-up" data-discipline-tab="${escapeHtml(enabledTabs[currentIndex - 1][0])}" title="Scroll up · ${escapeHtml(enabledTabs[currentIndex - 1][1])}">&#8593; ${escapeHtml(enabledTabs[currentIndex - 1][1])}</span>` : ""}
+          ${currentIndex < enabledTabs.length - 1 ? `<span class="disc-arrow disc-arrow-down" data-discipline-tab="${escapeHtml(enabledTabs[currentIndex + 1][0])}" title="Scroll down · ${escapeHtml(enabledTabs[currentIndex + 1][1])}">&#8595; ${escapeHtml(enabledTabs[currentIndex + 1][1])}</span>` : ""}
+        </div>
+      ` : ""}
+    </div>
+  `;
+
+  let panel = "";
+  if (ui.disciplineTab === "cycling") panel = renderCyclingPanel(getCyclingSummary(state));
+  else if (ui.disciplineTab === "running") panel = renderRunningPanel();
+  else if (ui.disciplineTab === "fasting") panel = renderFastingPanel(getFastingSummary(state));
+  else if (ui.disciplineTab === "reading") panel = renderReadingPanel();
+
+  return `
+    <div id="disciplines-scroll-container" data-enabled-tabs="${escapeHtml(enabledTabs.map(([k]) => k).join(","))}" data-current-tab="${escapeHtml(ui.disciplineTab)}">
+      <article class="page" style="margin-bottom:10px;">
+        ${subNav}
+      </article>
+      <div id="discipline-panel-content">
+        ${panel}
+      </div>
+    </div>
+  `;
+}
+
+// ── JOURNAL TAB ────────────────────────────────────────────────────
+function buildJournalFeed() {
+  const entries = [];
+
+  for (const ride of state.training.cycling.rides) {
+    entries.push({ date: ride.startAt, type: "ride", title: ride.name,
+      body: `${formatDistanceKm(ride.distanceKm)} · ${formatMinutes(ride.movingTimeMin)}${ride.note ? ` — ${ride.note}` : ""}` });
+  }
+
+  for (const run of (state.training.running.runs || [])) {
+    entries.push({ date: run.startAt, type: "run", title: run.name,
+      body: `${formatDistanceKm(run.distanceKm)} · ${formatMinutes(run.movingTimeMin)}${run.avgPaceMinPerKm ? ` · ${formatPace(run.avgPaceMinPerKm)}` : ""}${run.note ? ` — ${run.note}` : ""}` });
+  }
+
+  for (const log of state.training.fasting.logs) {
+    entries.push({ date: log.endAt || log.startAt, type: "fast", title: `${Number(log.hours).toFixed(1)} hr fast`,
+      body: log.note || (log.hours >= state.training.fasting.targetHours ? "Above target." : "Below target window.") });
+  }
+
+  for (const session of (state.training.reading.sessions || [])) {
+    const book = (state.training.reading.books || []).find(b => b.id === session.bookId);
+    entries.push({ date: session.date, type: "read", title: `Reading session — ${session.pages} pages`,
+      body: session.note || (book ? `From ${escapeHtml(book.title)}` : "Reading session logged.") });
+  }
+
+  for (const quest of state.quests.filter(q => q.completedAt || q.failedAt)) {
+    entries.push({ date: quest.completedAt || quest.failedAt, type: "goal",
+      title: quest.state === "completed" ? `Goal sealed — ${quest.title}` : `Goal closed — ${quest.title}`,
+      body: quest.state === "completed" ? `${CATEGORIES[quest.category]?.label || quest.category} · ${DIFFICULTIES[quest.difficulty]?.label || quest.difficulty}` : `Marked ${quest.state.replace("_", " ")}` });
+  }
+
+  for (const item of state.rewardHistory) {
+    entries.push({ date: item.unlockedAt, type: "reward", title: `Reward unlocked — ${item.name}`,
+      body: `${item.tier} tier · from ${item.questTitle}` });
+  }
+
+  return entries.sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+
+function renderJournal() {
+  const entries = buildJournalFeed();
+  const typeLabel = { ride: "ride", run: "run", fast: "fast", read: "reading", goal: "goal", reward: "reward" };
+
+  return `
+    <section class="page-spread single">
+      ${renderActivityPanel()}
+      <article class="page">
+        <div class="page-title-row">
+          <div>
+            <p class="page-kicker">Activity Journal</p>
+            <h2 class="page-title">Full Chronicle</h2>
+            <p class="page-copy">Every ride, run, fast, reading session, goal, and reward in one chronological feed.</p>
+          </div>
+        </div>
+        <div class="journal-list" style="padding:12px">
+          ${entries.length
+            ? entries.map(e => `
+              <article class="journal-entry entry-${e.type}">
+                <div class="journal-entry-date">${escapeHtml(formatDate(e.date, { weekday: "short", day: "numeric", month: "short", year: "numeric" }))}</div>
+                <div class="journal-entry-title">${escapeHtml(e.title)}</div>
+                <div class="journal-entry-body">${escapeHtml(e.body)}</div>
+                <span class="journal-entry-tag tag-${e.type}">${escapeHtml(typeLabel[e.type] || e.type)}</span>
+              </article>`).join("")
+            : `<div class="empty-state">Nothing logged yet. Complete a goal, log a ride, or record a fast to start the journal.</div>`
+          }
+        </div>
+      </article>
+    </section>
+  `;
+}
+
+
 function renderCurrentTab() {
   if (!state.character) return renderOnboarding();
-  if (ui.tab === "quests") return renderQuests();
-  if (ui.tab === "cycling") return renderCyclingPanel(getCyclingSummary(state));
-  if (ui.tab === "fasting") return renderFastingPanel(getFastingSummary(state));
+  if (ui.tab === "goals") return renderQuests();
+  if (ui.tab === "disciplines") return renderDisciplines();
+  if (ui.tab === "journal") return renderJournal();
   if (ui.tab === "settings") return renderSettings();
   return renderOverview();
 }
@@ -1893,6 +2414,12 @@ function renderQuestModal() {
               <label class="form-label" for="questCategory">Category</label>
               <select class="select-input" id="questCategory" name="category">
                 ${Object.entries(CATEGORIES).map(([key, value]) => `<option value="${key}">${escapeHtml(value.label)}</option>`).join("")}
+              </select>
+            </div>
+            <div>
+              <label class="form-label" for="questDiscipline">Discipline</label>
+              <select class="select-input" id="questDiscipline" name="discipline">
+                ${Object.entries(QUEST_DISCIPLINES).map(([key, value]) => `<option value="${key}">${escapeHtml(value.label)}</option>`).join("")}
               </select>
             </div>
             <div>
@@ -2084,6 +2611,144 @@ function renderRewardModal() {
   `;
 }
 
+function renderRunModal() {
+  return `
+    <div class="modal-backdrop" data-action="close-modal">
+      <div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <p class="page-kicker">Manual Run Entry</p>
+            <h3 class="modal-title">Log a Run</h3>
+          </div>
+          <button class="modal-close" type="button" data-action="close-modal">&times;</button>
+        </div>
+        <form class="form-shell" data-form="run">
+          <div class="field-grid two">
+            <div>
+              <label class="form-label" for="runName">Run name</label>
+              <input class="text-input" id="runName" name="name" placeholder="Morning tempo" required>
+            </div>
+            <div>
+              <label class="form-label" for="runStartAt">Start time</label>
+              <input class="text-input" id="runStartAt" name="startAt" type="datetime-local" required>
+            </div>
+            <div>
+              <label class="form-label" for="runDistanceKm">Distance (km)</label>
+              <input class="text-input" id="runDistanceKm" name="distanceKm" type="number" min="0" step="0.1" required>
+            </div>
+            <div>
+              <label class="form-label" for="runMovingTimeMin">Moving time (min)</label>
+              <input class="text-input" id="runMovingTimeMin" name="movingTimeMin" type="number" min="0" step="1" required>
+            </div>
+            <div>
+              <label class="form-label" for="runElevationM">Elevation gain (m)</label>
+              <input class="text-input" id="runElevationM" name="elevationM" type="number" min="0" step="1">
+            </div>
+            <div>
+              <label class="form-label" for="runAvgPace">Avg pace (min/km)</label>
+              <input class="text-input" id="runAvgPace" name="avgPaceMinPerKm" type="number" min="0" step="0.1">
+            </div>
+          </div>
+          <div>
+            <label class="form-label" for="runNote">Run note</label>
+            <textarea class="text-area" id="runNote" name="note" placeholder="Conditions, pacing, what helped."></textarea>
+          </div>
+          <div class="settings-actions">
+            <button class="primary-button" type="submit">Record run</button>
+            <button class="ghost-button" type="button" data-action="close-modal">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
+function renderBookModal() {
+  return `
+    <div class="modal-backdrop" data-action="close-modal">
+      <div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <p class="page-kicker">Reading Ledger</p>
+            <h3 class="modal-title">Add a Book</h3>
+          </div>
+          <button class="modal-close" type="button" data-action="close-modal">&times;</button>
+        </div>
+        <form class="form-shell" data-form="book">
+          <div class="field-grid two">
+            <div>
+              <label class="form-label" for="bookTitle">Title</label>
+              <input class="text-input" id="bookTitle" name="title" required>
+            </div>
+            <div>
+              <label class="form-label" for="bookAuthor">Author</label>
+              <input class="text-input" id="bookAuthor" name="author">
+            </div>
+            <div>
+              <label class="form-label" for="bookTotalPages">Total pages</label>
+              <input class="text-input" id="bookTotalPages" name="totalPages" type="number" min="1" required>
+            </div>
+            <div>
+              <label class="form-label" for="bookCurrentPage">Current page</label>
+              <input class="text-input" id="bookCurrentPage" name="currentPage" type="number" min="0" value="0">
+            </div>
+          </div>
+          <label class="check-row">
+            <input type="checkbox" name="clubPick">
+            <span>This is a book club pick</span>
+          </label>
+          <div>
+            <label class="form-label" for="bookNote">Note</label>
+            <textarea class="text-area" id="bookNote" name="note" placeholder="Why you picked it, what you hope to get from it."></textarea>
+          </div>
+          <div class="settings-actions">
+            <button class="primary-button" type="submit">Add book</button>
+            <button class="ghost-button" type="button" data-action="close-modal">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
+function renderReadingSessionModal() {
+  const currentBook = (state.training.reading.books || []).find(b => !b.finishedAt);
+  return `
+    <div class="modal-backdrop" data-action="close-modal">
+      <div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <p class="page-kicker">Reading Session</p>
+            <h3 class="modal-title">Log a Reading Session</h3>
+          </div>
+          <button class="modal-close" type="button" data-action="close-modal">&times;</button>
+        </div>
+        <form class="form-shell" data-form="reading-session">
+          <input type="hidden" name="bookId" value="${currentBook ? safeAttr(currentBook.id) : ""}">
+          <div class="field-grid two">
+            <div>
+              <label class="form-label" for="sessionPages">Pages read</label>
+              <input class="text-input" id="sessionPages" name="pages" type="number" min="1" required>
+            </div>
+            <div>
+              <label class="form-label" for="sessionEndPage">Now on page</label>
+              <input class="text-input" id="sessionEndPage" name="endPage" type="number" min="0" value="${currentBook ? currentBook.currentPage : 0}">
+            </div>
+          </div>
+          <div>
+            <label class="form-label" for="sessionNote">Session note</label>
+            <textarea class="text-area" id="sessionNote" name="note" placeholder="What stood out, questions raised, favourite line."></textarea>
+          </div>
+          <div class="settings-actions">
+            <button class="primary-button" type="submit">Log session</button>
+            <button class="ghost-button" type="button" data-action="close-modal">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
 function renderModal() {
   if (!ui.modal) return "";
   if (ui.modal.type === "quest") return renderQuestModal();
@@ -2094,6 +2759,9 @@ function renderModal() {
   }
   if (ui.modal.type === "fast") return renderFastModal();
   if (ui.modal.type === "reward") return renderRewardModal();
+  if (ui.modal.type === "run") return renderRunModal();
+  if (ui.modal.type === "book") return renderBookModal();
+  if (ui.modal.type === "reading-session") return renderReadingSessionModal();
   return "";
 }
 
@@ -2135,12 +2803,71 @@ function render() {
       ${renderToasts()}
     `;
   modalRoot.innerHTML = renderModal();
+  setupDisciplineScroll();
+}
+
+function setupDisciplineScroll() {
+  const container = document.getElementById("disciplines-scroll-container");
+  if (!container) return;
+
+  // Remove any previously attached listener by replacing the node
+  const main = document.querySelector(".main");
+  if (!main) return;
+
+  // Debounce guard
+  if (main._disciplineScrollHandler) {
+    main.removeEventListener("wheel", main._disciplineScrollHandler);
+  }
+
+  main._disciplineScrollHandler = (e) => {
+    const container = document.getElementById("disciplines-scroll-container");
+    if (!container) return;
+
+    // Only trigger when scrolled near top of disciplines panel
+    const rect = container.getBoundingClientRect();
+    const mainRect = main.getBoundingClientRect();
+    const panelTop = rect.top - mainRect.top + main.scrollTop;
+
+    // Must be viewing the disciplines tab
+    if (ui.tab !== "disciplines") return;
+
+    const enabledTabs = container.dataset.enabledTabs.split(",").filter(Boolean);
+    const currentTab = container.dataset.currentTab;
+    const currentIndex = enabledTabs.indexOf(currentTab);
+
+    // Only switch if we're at scroll boundaries
+    const atTop = main.scrollTop <= 10;
+    const atBottom = main.scrollTop + main.clientHeight >= main.scrollHeight - 10;
+
+    if (e.deltaY > 30 && currentIndex < enabledTabs.length - 1) {
+      // Scrolling down — go to next discipline
+      e.preventDefault();
+      ui.disciplineTab = enabledTabs[currentIndex + 1];
+      main.scrollTop = 0;
+      render();
+    } else if (e.deltaY < -30 && currentIndex > 0 && atTop) {
+      // Scrolling up at top — go to previous discipline
+      e.preventDefault();
+      ui.disciplineTab = enabledTabs[currentIndex - 1];
+      render();
+    }
+  };
+
+  // Use passive:false so we can preventDefault
+  main.addEventListener("wheel", main._disciplineScrollHandler, { passive: false });
 }
 
 async function handleClick(event) {
   const tab = event.target.closest("[data-tab]");
   if (tab) {
     ui.tab = tab.dataset.tab;
+    render();
+    return;
+  }
+
+  const discTab = event.target.closest("[data-discipline-tab]");
+  if (discTab) {
+    ui.disciplineTab = discTab.dataset.disciplineTab;
     render();
     return;
   }
@@ -2160,6 +2887,13 @@ async function handleClick(event) {
   if (action === "export-state") return downloadBackup();
   if (action === "load-demo-state") return loadDemoState();
   if (action === "sync-strava") return syncStrava(true);
+  if (action === "toggle-discipline") {
+    const disc = actionNode.dataset.discipline;
+    if (!state.disciplines) state.disciplines = {};
+    state.disciplines[disc] = !state.disciplines[disc];
+    persist();
+    return;
+  }
   if (action === "toggle-theme") {
     ui.theme = ui.theme === "dark" ? "light" : "dark";
     window.localStorage.setItem(THEME_STORAGE_KEY, ui.theme);
@@ -2212,6 +2946,67 @@ function handleSubmit(event) {
   if (kind === "fasting-settings") return updateFastingSettings(formData);
   if (kind === "quest-settings") return updateQuestSettings(formData);
   if (kind === "strava-settings") return updateStravaSettings(formData);
+  if (kind === "running-settings") return updateRunningSettings(formData);
+  if (kind === "reading-settings") return updateReadingSettings(formData);
+
+  if (kind === "run") {
+    state.training.running.runs.unshift({
+      id: uid("run"), source: "manual", stravaId: "",
+      name: String(formData.get("name") || "").trim() || "Manual run",
+      startAt: String(formData.get("startAt")),
+      distanceKm: Number(formData.get("distanceKm") || 0),
+      movingTimeMin: Number(formData.get("movingTimeMin") || 0),
+      elevationM: Number(formData.get("elevationM") || 0),
+      avgPaceMinPerKm: Number(formData.get("avgPaceMinPerKm") || 0),
+      note: String(formData.get("note") || "").trim()
+    });
+    persist(); closeModal(); pushToast("success", "Run added to the ledger.");
+    return;
+  }
+
+  if (kind === "book") {
+    const title = String(formData.get("title") || "").trim();
+    if (!title) return pushToast("error", "Book title is required.");
+    const colors = ["#7f1d1d","#1e3a5f","#3b0764","#064e3b","#1c1917","#1e1b4b","#422006","#450a0a"];
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const words = title.split(" ");
+    const initials = words.length >= 2 ? words[0][0] + words[1][0] : title.slice(0,2);
+    if (!state.training.reading.books) state.training.reading.books = [];
+    state.training.reading.books.unshift({
+      id: uid("book"), title,
+      author: String(formData.get("author") || "").trim(),
+      totalPages: Number(formData.get("totalPages") || 1),
+      currentPage: Number(formData.get("currentPage") || 0),
+      startedAt: new Date().toISOString(), finishedAt: null,
+      clubPick: formData.get("clubPick") === "on",
+      color, initials: initials.toUpperCase(),
+      note: String(formData.get("note") || "").trim()
+    });
+    persist(); closeModal(); pushToast("success", "Book added to the reading ledger.");
+    return;
+  }
+
+  if (kind === "reading-session") {
+    const pages = Number(formData.get("pages") || 0);
+    if (!pages) return pushToast("error", "Enter the number of pages read.");
+    const bookId = String(formData.get("bookId") || "");
+    const endPage = Number(formData.get("endPage") || 0);
+    if (!state.training.reading.sessions) state.training.reading.sessions = [];
+    state.training.reading.sessions.unshift({
+      id: uid("session"), bookId,
+      date: new Date().toISOString(), pages,
+      note: String(formData.get("note") || "").trim()
+    });
+    if (bookId) {
+      const book = (state.training.reading.books || []).find(b => b.id === bookId);
+      if (book && endPage > 0) {
+        book.currentPage = Math.min(endPage, book.totalPages);
+        if (book.currentPage >= book.totalPages) book.finishedAt = new Date().toISOString();
+      }
+    }
+    persist(); closeModal(); pushToast("success", "Reading session logged.");
+    return;
+  }
 }
 
 function handleChange(event) {
@@ -2225,6 +3020,15 @@ function handleChange(event) {
   const bonusToggle = event.target.closest("[data-bonus-toggle]");
   if (bonusToggle) {
     updateQuestBonus(bonusToggle.dataset.questId, bonusToggle.dataset.bonusId, bonusToggle.checked);
+    return;
+  }
+
+  const discToggle = event.target.closest("[data-discipline-toggle]");
+  if (discToggle) {
+    const disc = discToggle.dataset.disciplineToggle;
+    if (!state.disciplines) state.disciplines = {};
+    state.disciplines[disc] = discToggle.checked;
+    persist();
   }
 }
 

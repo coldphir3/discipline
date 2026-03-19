@@ -18,6 +18,14 @@ export const CATEGORIES = {
   relationships: { label: "Relationships", colorClass: "category-relationships", icon: "Bond" }
 };
 
+export const QUEST_DISCIPLINES = {
+  cycling: { label: "Cycling", colorClass: "discipline-cycling" },
+  running: { label: "Running", colorClass: "discipline-running" },
+  fasting: { label: "Fasting", colorClass: "discipline-fasting" },
+  reading: { label: "Reading", colorClass: "discipline-reading" },
+  general: { label: "General", colorClass: "discipline-general" }
+};
+
 export const CLASSES = {
   warrior: { name: "Wayfinder", bonus: "20% Health quest XP", statBonus: "health" },
   scholar: { name: "Archivist", bonus: "20% Focus quest XP", statBonus: "intelligence" },
@@ -161,9 +169,65 @@ export function createDefaultState() {
         targetHours: 16,
         weeklyTargetDays: 5,
         logs: []
+      },
+      running: {
+        weeklyRunTarget: 4,
+        weeklyDistanceTargetKm: 40,
+        qualifyingRunKm: 3,
+        qualifyingRunMinutes: 20,
+        runs: []
+      },
+      reading: {
+        dailyPageTarget: 30,
+        yearlyBookTarget: 12,
+        clubMeetingDay: "",
+        books: [],
+        sessions: []
       }
+    },
+    disciplines: {
+      cycling: true,
+      running: false,
+      fasting: true,
+      reading: false
     }
   };
+}
+
+const QUEST_DISCIPLINE_PATTERNS = {
+  cycling: [/\bride(s|r|ing)?\b/i, /\bbike(s|d|ing)?\b/i, /\bcycl(e|es|ing|ist)?\b/i, /\bstrava\b/i],
+  running: [/\brun(s|ning)?\b/i, /\bjog(s|ging)?\b/i, /\bpace\b/i, /\b(5k|10k|half marathon|marathon)\b/i],
+  fasting: [/\bfast(s|ing)?\b/i, /\b16:8\b/i, /\b18[\s-]?hour\b/i, /\bmeal window(s)?\b/i, /\beating window(s)?\b/i],
+  reading: [/\bread(ing)?\b/i, /\bbook(s)?\b/i, /\bpage(s)?\b/i, /\bchapter(s)?\b/i, /\bbook club\b/i]
+};
+
+function inferQuestDiscipline(raw = {}) {
+  if (QUEST_DISCIPLINES[raw.discipline]) return raw.discipline;
+
+  const haystack = [raw.title, raw.description, raw.notes, raw.chainId]
+    .filter(Boolean)
+    .join(" ");
+
+  if (!haystack.trim()) return "general";
+
+  for (const [discipline, patterns] of Object.entries(QUEST_DISCIPLINE_PATTERNS)) {
+    if (patterns.some((pattern) => pattern.test(haystack))) return discipline;
+  }
+
+  return "general";
+}
+
+function hasMeaningfulState(state) {
+  if (!state || typeof state !== "object") return false;
+  if (state.character) return true;
+  if (Array.isArray(state.quests) && state.quests.length) return true;
+  if (Array.isArray(state.rewardHistory) && state.rewardHistory.length) return true;
+  if (Array.isArray(state.training?.cycling?.rides) && state.training.cycling.rides.length) return true;
+  if (Array.isArray(state.training?.fasting?.logs) && state.training.fasting.logs.length) return true;
+  if (Array.isArray(state.training?.running?.runs) && state.training.running.runs.length) return true;
+  if (Array.isArray(state.training?.reading?.books) && state.training.reading.books.length) return true;
+  if (Array.isArray(state.training?.reading?.sessions) && state.training.reading.sessions.length) return true;
+  return false;
 }
 
 function isoAt(date) {
@@ -242,6 +306,7 @@ export function createDemoState() {
       title: "Define the spring cut rules",
       description: "Write the non-negotiables for fasting, cycling volume, and recovery so the week has rules instead of moods.",
       category: "health",
+      discipline: "general",
       difficulty: "medium",
       state: "completed",
       dueDate: toDateKey(offsetDate(now, -10)),
@@ -263,6 +328,7 @@ export function createDemoState() {
       title: "Hit three qualifying rides this week",
       description: "Use rides as the backbone habit that stabilises discipline everywhere else.",
       category: "health",
+      discipline: "cycling",
       difficulty: "hard",
       state: "completed",
       dueDate: toDateKey(offsetDate(now, -3)),
@@ -284,6 +350,7 @@ export function createDemoState() {
       title: "Keep a 16:8 fasting streak for five days",
       description: "Log every fasting window and write one line about hunger, energy, or environment.",
       category: "health",
+      discipline: "fasting",
       difficulty: "hard",
       state: "in_progress",
       dueDate: toDateKey(offsetDate(now, 2)),
@@ -305,6 +372,7 @@ export function createDemoState() {
       title: "Simulate the first 100 km ride",
       description: "Build confidence with a long endurance ride once the weekly consistency block is in place.",
       category: "health",
+      discipline: "cycling",
       difficulty: "epic",
       state: "available",
       dueDate: toDateKey(offsetDate(now, 10)),
@@ -326,6 +394,7 @@ export function createDemoState() {
       title: "Ship the first public build log",
       description: "Write and publish a short update on the app so momentum stays visible.",
       category: "intelligence",
+      discipline: "general",
       difficulty: "medium",
       state: "available",
       dueDate: toDateKey(offsetDate(now, 3)),
@@ -346,6 +415,7 @@ export function createDemoState() {
       title: "Book a proper bike fit",
       description: "Resolve fit discomfort before volume climbs again.",
       category: "money",
+      discipline: "cycling",
       difficulty: "easy",
       state: "completed",
       dueDate: toDateKey(offsetDate(now, -18)),
@@ -364,6 +434,7 @@ export function createDemoState() {
       title: "Plan this week's meal windows",
       description: "Write the planned eating windows before the week starts.",
       category: "health",
+      discipline: "fasting",
       difficulty: "easy",
       state: "completed",
       dueDate: toDateKey(offsetDate(now, -1)),
@@ -384,6 +455,7 @@ export function createDemoState() {
       title: "Sunrise interval session",
       description: "A sharp threshold ride before work.",
       category: "health",
+      discipline: "cycling",
       difficulty: "hard",
       state: "failed",
       dueDate: toDateKey(offsetDate(now, -5)),
@@ -402,6 +474,7 @@ export function createDemoState() {
       title: "Zero sugar for 14 days",
       description: "An overly aggressive challenge that looked good on paper and broke in practice.",
       category: "health",
+      discipline: "fasting",
       difficulty: "medium",
       state: "abandoned",
       dueDate: toDateKey(offsetDate(now, -7)),
@@ -420,6 +493,7 @@ export function createDemoState() {
       title: "Record one social event without derailing the cut",
       description: "Go out, enjoy the evening, and still close the day intentionally.",
       category: "relationships",
+      discipline: "general",
       difficulty: "medium",
       state: "available",
       dueDate: toDateKey(offsetDate(now, 4)),
@@ -626,6 +700,37 @@ export function createDemoState() {
 
   demo.stats = buildDemoQuestStats(demo.quests);
 
+  demo.disciplines = { cycling: true, running: true, fasting: true, reading: true };
+
+  demo.training.running = {
+    weeklyRunTarget: 4,
+    weeklyDistanceTargetKm: 40,
+    qualifyingRunKm: 3,
+    qualifyingRunMinutes: 20,
+    runs: [
+      { id: uid("run"), source: "strava", stravaId: "run_demo_1", name: "Morning tempo run", startAt: isoAt(offsetDate(currentWeekStart, 0, 6, 30)), distanceKm: 8.2, movingTimeMin: 46, elevationM: 62, avgPaceMinPerKm: 5.6, note: "Legs felt heavy for the first 2 km then settled." },
+      { id: uid("run"), source: "manual", stravaId: "", name: "Easy recovery jog", startAt: isoAt(offsetDate(currentWeekStart, 1, 17, 0)), distanceKm: 5.1, movingTimeMin: 31, elevationM: 28, avgPaceMinPerKm: 6.1, note: "Easy and conversational." },
+      { id: uid("run"), source: "strava", stravaId: "run_demo_2", name: "Long slow distance", startAt: isoAt(offsetDate(previousWeekStart, 5, 7, 0)), distanceKm: 12.3, movingTimeMin: 74, elevationM: 110, avgPaceMinPerKm: 6.0, note: "First run that made a half marathon feel realistic." },
+      { id: uid("run"), source: "strava", stravaId: "run_demo_3", name: "Interval session", startAt: isoAt(offsetDate(previousWeekStart, 2, 6, 15)), distanceKm: 7.4, movingTimeMin: 38, elevationM: 44, avgPaceMinPerKm: 5.1, note: "6x800m. Hard but felt strong." }
+    ]
+  };
+
+  demo.training.reading = {
+    dailyPageTarget: 30,
+    yearlyBookTarget: 12,
+    clubMeetingDay: "Friday",
+    books: [
+      { id: uid("book"), title: "The Name of the Wind", author: "Patrick Rothfuss", totalPages: 374, currentPage: 187, startedAt: isoAt(offsetDate(now, -14)), finishedAt: null, clubPick: true, color: "#7f1d1d", initials: "NW", note: "" },
+      { id: uid("book"), title: "Atomic Habits", author: "James Clear", totalPages: 320, currentPage: 320, startedAt: isoAt(offsetDate(now, -60)), finishedAt: isoAt(offsetDate(now, -21)), clubPick: false, color: "#1e3a5f", initials: "AH", note: "Changed how I think about streaks." },
+      { id: uid("book"), title: "Deep Work", author: "Cal Newport", totalPages: 296, currentPage: 296, startedAt: isoAt(offsetDate(now, -90)), finishedAt: isoAt(offsetDate(now, -45)), clubPick: false, color: "#3b0764", initials: "DW", note: "Required reading for the Creator Arc." }
+    ],
+    sessions: [
+      { id: uid("session"), bookId: "", date: isoAt(offsetDate(now, -1, 21, 15)), pages: 35, note: "The story picked up after the Eolian scene." },
+      { id: uid("session"), bookId: "", date: isoAt(offsetDate(now, -2, 20, 0)), pages: 28, note: "Slower reading — took notes." },
+      { id: uid("session"), bookId: "", date: isoAt(offsetDate(now, -3, 21, 30)), pages: 41, note: "Could not put it down." }
+    ]
+  };
+
   return normalizeState(demo);
 }
 
@@ -664,6 +769,7 @@ function normalizeQuest(raw) {
     title: raw.title || "Untitled quest",
     description: raw.description || "",
     category: CATEGORIES[raw.category] ? raw.category : "health",
+    discipline: inferQuestDiscipline(raw),
     difficulty: DIFFICULTIES[raw.difficulty] ? raw.difficulty : "easy",
     state: normalizeQuestState(raw),
     dueDate: raw.dueDate || null,
@@ -715,6 +821,22 @@ function normalizeFastLog(raw) {
     startAt,
     endAt,
     hours,
+    note: raw.note || ""
+  };
+}
+
+function normalizeRun(raw) {
+  const startAt = raw.startAt || new Date().toISOString();
+  return {
+    id: raw.id || uid("run"),
+    source: raw.source || "manual",
+    stravaId: raw.stravaId ? String(raw.stravaId) : "",
+    name: raw.name || "Run logged",
+    startAt,
+    distanceKm: Number(raw.distanceKm || 0),
+    movingTimeMin: Number(raw.movingTimeMin || 0),
+    elevationM: Number(raw.elevationM || 0),
+    avgPaceMinPerKm: Number(raw.avgPaceMinPerKm || 0),
     note: raw.note || ""
   };
 }
@@ -776,13 +898,31 @@ export function normalizeState(raw) {
         logs: Array.isArray(raw.training?.fasting?.logs)
           ? raw.training.fasting.logs.map(normalizeFastLog)
           : base.training.fasting.logs
+      },
+      running: {
+        ...base.training.running,
+        ...((raw.training || {}).running || {}),
+        runs: Array.isArray(raw.training?.running?.runs)
+          ? raw.training.running.runs.map(normalizeRun)
+          : base.training.running.runs
+      },
+      reading: {
+        ...base.training.reading,
+        ...((raw.training || {}).reading || {}),
+        books: Array.isArray(raw.training?.reading?.books) ? raw.training.reading.books : base.training.reading.books,
+        sessions: Array.isArray(raw.training?.reading?.sessions) ? raw.training.reading.sessions : base.training.reading.sessions
       }
+    },
+    disciplines: {
+      ...base.disciplines,
+      ...(raw.disciplines || {})
     }
   };
 
   next.quests.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   next.training.cycling.rides.sort((left, right) => new Date(right.startAt).getTime() - new Date(left.startAt).getTime());
   next.training.fasting.logs.sort((left, right) => new Date(right.endAt).getTime() - new Date(left.endAt).getTime());
+  next.training.running.runs.sort((left, right) => new Date(right.startAt).getTime() - new Date(left.startAt).getTime());
 
   return next;
 }
@@ -802,7 +942,11 @@ function migrateLegacyState(raw) {
 export function loadState() {
   try {
     const primary = localStorage.getItem(STORAGE_KEY);
-    if (primary) return normalizeState(JSON.parse(primary));
+    if (primary) {
+      const normalizedPrimary = normalizeState(JSON.parse(primary));
+      if (FORCE_DEMO_ON_FIRST_LOAD && !hasMeaningfulState(normalizedPrimary)) return createDemoState();
+      return normalizedPrimary;
+    }
 
     if (FORCE_DEMO_ON_FIRST_LOAD) return createDemoState();
 
