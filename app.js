@@ -755,7 +755,7 @@ function renderTopStats() {
             accentClass: "accent-cyan"
           })}
           ${renderSummaryCard({
-            label: "Open Quests",
+            label: "Active Quests",
             value: `${activeQuests} active`,
             note: `${questSummary.locked} locked in chains`,
             ringValue: String(activeQuests),
@@ -971,7 +971,7 @@ function renderChainPanel(chains) {
       <div class="page-title-row">
         <div>
           <p class="page-kicker">Quest Chains</p>
-          <h2 class="page-title">Campaign Arcs</h2>
+          <h2 class="page-title">Active Chains</h2>
           <p class="page-copy">Multi-step threads stay visible here so the larger story does not disappear under daily tasks.</p>
         </div>
       </div>
@@ -1041,7 +1041,7 @@ function renderOverview() {
       </article>
       <article class="page panel">
         <div class="panel-header">
-          <span class="panel-title">Campaign Pressure</span>
+          <span class="panel-title">This Week</span>
         </div>
         <div class="panel-body">
           <div>
@@ -1082,8 +1082,8 @@ function renderOverview() {
       </article>
     </section>
     <section class="page-spread dashboard-support-row">
-      ${renderActivityPanel()}
       ${renderFocusPanel(chains, cyclingSummary, fastingSummary)}
+      ${renderActivityPanel()}
     </section>
   `;
 }
@@ -1190,8 +1190,8 @@ function renderQuests() {
         <div class="page-title-row">
           <div>
             <p class="page-kicker">Quest Ledger</p>
-            <h2 class="page-title">Chains, Failures, and History</h2>
-            <p class="page-copy">This side of the journal keeps chain context, bonus objective progress, and the closed record.</p>
+            <h2 class="page-title">Chains and History</h2>
+            <p class="page-copy">Chain context, bonus objective progress, and the full record of closed contracts.</p>
           </div>
         </div>
         <div class="section-stack">
@@ -1200,7 +1200,7 @@ function renderQuests() {
             ${chainGroups.length ? chainGroups.map(renderChainCard).join("") : `<div class="empty-state">Create a quest chain by giving related quests the same chain name.</div>`}
           </div>
           <div class="card">
-            <div class="section-label">Closed Entries</div>
+            <div class="section-label">History</div>
             <div class="log-list">
               ${
                 groups.closed.length
@@ -1428,8 +1428,8 @@ function renderRewards() {
         <div class="page-title-row">
           <div>
             <p class="page-kicker">Reward Treasury</p>
-            <h2 class="page-title">Claimable Indulgences</h2>
-            <p class="page-copy">The rewards exist to reinforce consistency, not to become the whole game.</p>
+            <h2 class="page-title">Your Spoils</h2>
+            <p class="page-copy">Rewards earned through completed quests. Add what actually motivates you.</p>
           </div>
           <button class="primary-button" data-action="open-modal" data-modal="reward">Add reward</button>
         </div>
@@ -1459,7 +1459,7 @@ function renderRewards() {
           <div>
             <p class="page-kicker">Reward History</p>
             <h2 class="page-title">Unlocked Moments</h2>
-            <p class="page-copy">A running record of rewards earned through completed quests.</p>
+            <p class="page-copy">Rewards unlocked through completed quests.</p>
           </div>
         </div>
         <div class="log-list">
@@ -1667,20 +1667,38 @@ function renderTabs() {
 function renderShellHeader() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
-  const shellCopy = {
-    overview: "The System rewards consistency. Keep the board moving.",
-    quests: "Quest chains turn discipline into a campaign.",
-    cycling: "Keep the ride streak and distance targets honest.",
-    fasting: "Watch the streak, target hours, and ledger quality.",
-    settings: "Adjust thresholds and sync rules before the next run."
-  };
+
+  function getContextualTagline() {
+    if (ui.tab === "cycling") {
+      const s = getCyclingSummary(state);
+      if (s.currentWeek.targetMet) return `Ride target met this week. ${s.dayStreak.current > 1 ? `${s.dayStreak.current}-day streak running.` : ""}`;
+      return `${s.currentWeek.ridesRemaining} ride${s.currentWeek.ridesRemaining === 1 ? "" : "s"} left to hit the weekly target. ${s.currentWeek.distanceRemainingKm.toFixed(1)} km to go.`;
+    }
+    if (ui.tab === "fasting") {
+      const s = getFastingSummary(state);
+      if (s.currentWeek.targetMet) return `Fasting target met this week. ${s.streak.current > 1 ? `${s.streak.current}-day streak active.` : ""}`;
+      return `${s.currentWeek.targetDays - s.currentWeek.completedDays} fast${s.currentWeek.targetDays - s.currentWeek.completedDays === 1 ? "" : "s"} remaining this week. ${state.training.fasting.targetHours} hr window qualifies.`;
+    }
+    if (ui.tab === "quests") {
+      const s = getQuestSummary(state);
+      if (s.overdue) return `${s.overdue} overdue quest${s.overdue === 1 ? "" : "s"} need attention. ${s.inProgress} in progress.`;
+      return `${s.inProgress} quest${s.inProgress === 1 ? "" : "s"} in progress. ${s.available} available to start.`;
+    }
+    if (ui.tab === "settings") return "Adjust thresholds and sync rules before the next run.";
+    // overview
+    const questSummary = getQuestSummary(state);
+    if (questSummary.overdue) return `${questSummary.overdue} overdue quest${questSummary.overdue === 1 ? "" : "s"} on the board. Deal with those first.`;
+    const riding = getCyclingSummary(state);
+    if (!riding.currentWeek.targetMet) return `${riding.currentWeek.ridesRemaining} ride${riding.currentWeek.ridesRemaining === 1 ? "" : "s"} left this week. ${riding.currentWeek.distanceKm.toFixed(1)} km logged so far.`;
+    return `Weekly targets on track. ${questSummary.inProgress} quest${questSummary.inProgress === 1 ? "" : "s"} in progress.`;
+  }
 
   return `
     <section class="header-band">
       <div>
         <p class="greeting">${greeting}</p>
         <h1 class="welcome">Welcome back, <span>${escapeHtml(state.character.name)}</span></h1>
-        <p class="tagline">${escapeHtml(shellCopy[ui.tab] || shellCopy.overview)}</p>
+        <p class="tagline">${escapeHtml(getContextualTagline())}</p>
       </div>
       <div class="header-actions">
         <button class="btn btn-primary" type="button" data-action="open-modal" data-modal="${ui.tab === "cycling" ? "ride" : ui.tab === "fasting" ? "fast" : "quest"}">
@@ -1920,7 +1938,7 @@ function renderQuestModal() {
             </div>
           </div>
           <div class="settings-actions">
-            <button class="primary-button" type="submit">Seal quest</button>
+            <button class="primary-button" type="submit">Add quest</button>
             <button class="ghost-button" type="button" data-action="close-modal">Cancel</button>
           </div>
         </form>
