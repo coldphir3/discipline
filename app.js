@@ -507,32 +507,92 @@ function isOverdue(quest) {
   return new Date(quest.dueDate).getTime() < new Date().setHours(0, 0, 0, 0);
 }
 
+// Arc sweeps left-to-right along the BOTTOM of the circle (opens upward, like a speedometer).
+// cx,cy = centre. The arc starts at the left endpoint (cx-r, cy) and sweeps
+// clockwise through the top to the right endpoint (cx+r, cy).
+// sweep-flag=1 → clockwise in SVG coordinates (Y-axis points down).
+function arcGaugePath(cx, cy, r, progress) {
+  const clamp = Math.max(0, Math.min(100, progress));
+  const angle = 180 * (clamp / 100); // degrees swept, 0→180
+  // Start: left point of the diameter
+  const x1 = cx - r, y1 = cy;
+  // End: rotated clockwise from the left by `angle` degrees
+  const rad = (angle * Math.PI) / 180;
+  const x2 = (cx - r * Math.cos(rad)).toFixed(2);
+  const y2 = (cy - r * Math.sin(rad)).toFixed(2); // negative because up = negative Y in SVG
+  const la = angle > 180 ? 1 : 0;
+  // sweep-flag=1 = clockwise
+  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${la} 1 ${x2} ${y2}`;
+}
+
+function getAccentVar(accentClass) {
+  return {
+    "accent-cyan": "var(--accent-cyan)",
+    "accent-orange": "var(--accent-orange)",
+    "accent-violet": "var(--accent-purple)",
+    "accent-yellow": "var(--accent-yellow)"
+  }[accentClass] || "var(--accent-cyan)";
+}
+
+function buildArcTicks({
+  cx,
+  cy,
+  r,
+  strokeWidth,
+  totalSegments,
+  filledSegments,
+  outerInset,
+  innerInset,
+  filledColor = "var(--bg)",
+  emptyColor = "var(--surface-3)",
+  tickWidth = 1.2
+}) {
+  let ticks = "";
+  for (let i = 1; i < totalSegments; i += 1) {
+    const pct = (i / totalSegments) * 100;
+    const ang = (pct / 100) * Math.PI;
+    const ox = (cx - (r + strokeWidth / 2 + outerInset) * Math.cos(ang)).toFixed(2);
+    const oy = (cy - (r + strokeWidth / 2 + outerInset) * Math.sin(ang)).toFixed(2);
+    const ix = (cx - (r - strokeWidth / 2 - innerInset) * Math.cos(ang)).toFixed(2);
+    const iy = (cy - (r - strokeWidth / 2 - innerInset) * Math.sin(ang)).toFixed(2);
+    const tickColor = i <= filledSegments ? filledColor : emptyColor;
+    ticks += `<line x1="${ox}" y1="${oy}" x2="${ix}" y2="${iy}" stroke="${tickColor}" stroke-width="${tickWidth}" stroke-linecap="round"/>`;
+  }
+  return ticks;
+}
+
 function renderSummaryCard({ label, value, note, ringValue, ringUnit = "", progress = 0, accentClass = "accent-cyan" }) {
-  const circumference = 163.4;
   const clamped = Math.max(0, Math.min(progress, 100));
-  const filled = ((clamped / 100) * circumference).toFixed(1);
-  const remainder = Math.max(circumference - Number(filled), 0).toFixed(1);
+  const cx = 40, cy = 36, r = 28, tw = 5;
+  const accentVar = getAccentVar(accentClass);
+  const totalSegs = 5;
+  const filledCount = Math.max(0, Math.min(totalSegs, Math.round((clamped / 100) * totalSegs)));
+  const ticks = buildArcTicks({
+    cx,
+    cy,
+    r,
+    strokeWidth: tw,
+    totalSegments: totalSegs,
+    filledSegments: filledCount,
+    outerInset: 2,
+    innerInset: 2,
+    filledColor: "var(--bg)",
+    emptyColor: "var(--surface-3)",
+    tickWidth: 1
+  });
 
   return `
-    <article class="summary-card">
-      <div class="stat-ring-wrap">
-        <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">
-          <circle cx="32" cy="32" r="26" fill="none" class="ring-track" stroke-width="4"></circle>
-          <circle
-            cx="32"
-            cy="32"
-            r="26"
-            fill="none"
-            class="ring-progress ${accentClass}"
-            stroke-width="4"
-            stroke-dasharray="${filled} ${remainder}"
-            stroke-linecap="round"
-          ></circle>
+    <article class="summary-card arc-summary-card ${accentClass}" style="--arc-accent:${accentVar}">
+      <div class="arc-mini-wrap">
+        <svg viewBox="0 0 80 42" aria-hidden="true" class="arc-mini-svg">
+          <path d="${arcGaugePath(cx, cy, r, 100)}" fill="none" stroke="var(--border)" stroke-width="${tw}" stroke-linecap="round"/>
+          ${clamped > 0 ? `<path d="${arcGaugePath(cx, cy, r, clamped)}" fill="none" stroke="${accentVar}" stroke-width="${tw}" stroke-linecap="round" class="arc-fill"/>` : ""}
+          ${ticks}
+          <circle cx="${cx - r}" cy="${cy}" r="1.8" fill="var(--border-2)"/>
+          <circle cx="${cx + r}" cy="${cy}" r="1.8" fill="var(--border-2)"/>
+          <text x="${cx}" y="${cy - 8}" text-anchor="middle" fill="${accentVar}" font-family="var(--font-mono)" font-size="13" font-weight="600" letter-spacing="-0.03em">${escapeHtml(String(ringValue))}</text>
+          ${ringUnit ? `<text x="${cx}" y="${cy + 2}" text-anchor="middle" fill="var(--text-3)" font-family="var(--font-mono)" font-size="5.5" letter-spacing="0.12em">${escapeHtml(ringUnit.toUpperCase())}</text>` : ""}
         </svg>
-        <div class="stat-ring-inner">
-          <span class="stat-ring-val">${escapeHtml(ringValue)}</span>
-          ${ringUnit ? `<span class="stat-ring-unit">${escapeHtml(ringUnit)}</span>` : ""}
-        </div>
       </div>
       <div class="stat-text">
         <div class="summary-label">${escapeHtml(label)}</div>
@@ -547,21 +607,23 @@ function renderThemeIcon(theme) {
   if (theme === "dark") {
     return `
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M19.5 14.25A7.5 7.5 0 0 1 9.75 4.5a7.5 7.5 0 1 0 9.75 9.75Z"></path>
+        <circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"></circle>
+        <path d="M12 2.5v2.5"></path>
+        <path d="M12 19v2.5"></path>
+        <path d="m4.93 4.93 1.77 1.77"></path>
+        <path d="m17.3 17.3 1.77 1.77"></path>
+        <path d="M2.5 12H5"></path>
+        <path d="M19 12h2.5"></path>
+        <path d="m4.93 19.07 1.77-1.77"></path>
+        <path d="m17.3 6.7 1.77-1.77"></path>
       </svg>`;
   }
 
   return `
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="4"></circle>
-      <path d="M12 2.25v2.25"></path>
-      <path d="M12 19.5v2.25"></path>
-      <path d="m4.93 4.93 1.59 1.59"></path>
-      <path d="m17.48 17.48 1.59 1.59"></path>
-      <path d="M2.25 12H4.5"></path>
-      <path d="M19.5 12h2.25"></path>
-      <path d="m4.93 19.07 1.59-1.59"></path>
-      <path d="m17.48 6.52 1.59-1.59"></path>
+      <path d="M17.5 14.5A6.5 6.5 0 0 1 10 6a7.5 7.5 0 1 0 7.5 8.5Z" fill="currentColor" stroke="none"></path>
+      <path d="M16.5 4.5v2"></path>
+      <path d="M15.5 5.5h2"></path>
     </svg>`;
 }
 
@@ -600,29 +662,64 @@ function renderMetricsStrip() {
   const cyclingSummary = getCyclingSummary(state);
   const fastingSummary = getFastingSummary(state);
   const questSummary = getQuestSummary(state);
+  const level = getLevel(state.character.xp);
+  const xpIn = xpIntoCurrentLevel(state.character.xp);
+  const xpNeeded = xpForLevel(level);
+  const xpPct = Math.round((xpIn / Math.max(xpNeeded, 1)) * 100);
+  const ridePct = Math.min(
+    100,
+    Math.round(
+      (cyclingSummary.currentWeek.distanceKm / Math.max(state.training.cycling.weeklyDistanceTargetKm, 1)) * 100
+    )
+  );
+  const fastPct = Math.min(
+    100,
+    Math.round(
+      (fastingSummary.currentWeek.completedDays / Math.max(fastingSummary.currentWeek.targetDays, 1)) * 100
+    )
+  );
+  const totalQuests = Math.max(questSummary.total || 1, 1);
+  const activeQuests = questSummary.inProgress + questSummary.available;
+  const questPct = Math.min(100, Math.round((activeQuests / totalQuests) * 100));
+  const levelPct = Math.min(100, xpPct);
 
   return `
     <section class="metrics-strip">
-      <article class="metric-chip chip-level">
-        <span class="metric-chip-label">Level</span>
-        <span class="metric-chip-val">${getLevel(state.character.xp)}</span>
-      </article>
-      <article class="metric-chip chip-xp">
-        <span class="metric-chip-label">XP</span>
-        <span class="metric-chip-val">${xpIntoCurrentLevel(state.character.xp)} / ${xpForLevel(getLevel(state.character.xp))}</span>
-      </article>
-      <article class="metric-chip chip-ride">
-        <span class="metric-chip-label">Weekly KM</span>
-        <span class="metric-chip-val">${cyclingSummary.currentWeek.distanceKm.toFixed(1)} km</span>
-      </article>
-      <article class="metric-chip chip-fast">
-        <span class="metric-chip-label">Fasting</span>
-        <span class="metric-chip-val">${fastingSummary.currentWeek.completedDays}/${fastingSummary.currentWeek.targetDays} days</span>
-      </article>
-      <article class="metric-chip chip-quests">
-        <span class="metric-chip-label">Quest Load</span>
-        <span class="metric-chip-val">${questSummary.inProgress + questSummary.available} active</span>
-      </article>
+      <div class="mchip mchip-level">
+        <div class="mchip-inner">
+          <span class="mchip-key">LVL</span><span class="mchip-sep">/</span><span class="mchip-val mchip-red">${level}</span>
+          <span class="mchip-note">${escapeHtml(CLASSES[state.character.class].name)}</span>
+        </div>
+        <div class="mchip-bar-track"><div class="mchip-bar mchip-bar-red" style="width:${levelPct}%"></div></div>
+      </div>
+      <div class="mchip mchip-xp">
+        <div class="mchip-inner">
+          <span class="mchip-key">XP</span><span class="mchip-sep">/</span><span class="mchip-val mchip-cyan">${xpIn} / ${xpNeeded}</span>
+          <span class="mchip-note">${xpPct}% to next</span>
+        </div>
+        <div class="mchip-bar-track"><div class="mchip-bar mchip-bar-cyan" style="width:${xpPct}%"></div></div>
+      </div>
+      <div class="mchip mchip-ride">
+        <div class="mchip-inner">
+          <span class="mchip-key">KM</span><span class="mchip-sep">/</span><span class="mchip-val mchip-amber">${cyclingSummary.currentWeek.distanceKm.toFixed(1)} km</span>
+          <span class="mchip-note">${cyclingSummary.currentWeek.targetMet ? "target met" : `${cyclingSummary.currentWeek.distanceRemainingKm.toFixed(1)} km left`}</span>
+        </div>
+        <div class="mchip-bar-track"><div class="mchip-bar mchip-bar-amber" style="width:${ridePct}%"></div></div>
+      </div>
+      <div class="mchip mchip-fast">
+        <div class="mchip-inner">
+          <span class="mchip-key">FAST</span><span class="mchip-sep">/</span><span class="mchip-val mchip-violet">${fastingSummary.currentWeek.completedDays}/${fastingSummary.currentWeek.targetDays} days</span>
+          <span class="mchip-note">${fastingSummary.currentWeek.targetMet ? "target met" : `${fastingSummary.currentWeek.targetDays - fastingSummary.currentWeek.completedDays} remaining`}</span>
+        </div>
+        <div class="mchip-bar-track"><div class="mchip-bar mchip-bar-violet" style="width:${fastPct}%"></div></div>
+      </div>
+      <div class="mchip mchip-quests">
+        <div class="mchip-inner">
+          <span class="mchip-key">QUEST</span><span class="mchip-sep">/</span><span class="mchip-val mchip-green">${activeQuests} active</span>
+          <span class="mchip-note">${questSummary.overdue ? `${questSummary.overdue} overdue` : "board clear"}</span>
+        </div>
+        <div class="mchip-bar-track"><div class="mchip-bar mchip-bar-green" style="width:${questPct}%"></div></div>
+      </div>
     </section>
   `;
 }
@@ -889,121 +986,6 @@ function renderChainPanel(chains) {
   `;
 }
 
-function renderOverviewLegacy() {
-  const cyclingSummary = getCyclingSummary(state);
-  const fastingSummary = getFastingSummary(state);
-  const questSummary = getQuestSummary(state);
-  const chains = buildChainGroups();
-  const level = getLevel(state.character.xp);
-  const xpIntoLevel = xpIntoCurrentLevel(state.character.xp);
-  const xpNeeded = xpForLevel(level);
-  const xpPercent = Math.min(100, Math.round((xpIntoLevel / xpNeeded) * 100));
-
-  return `
-    ${renderTopStats()}
-    <section class="page-spread" style="margin-top:18px">
-      <article class="page">
-        <div class="page-title-row">
-          <div>
-            <p class="page-kicker">Character Ledger</p>
-            <h2 class="page-title">${escapeHtml(state.character.name)}</h2>
-            <p class="page-copy">${escapeHtml(state.character.title || "No title chosen yet")} · ${escapeHtml(CLASSES[state.character.class].bonus)}</p>
-          </div>
-          <div class="wax-badge">Level ${level}</div>
-        </div>
-        <div class="section-stack">
-          <div class="summary-card">
-            <div class="summary-label">Experience</div>
-            <div class="summary-value">${xpIntoLevel} / ${xpNeeded}</div>
-            <div class="progress-shell" style="margin-top:12px">
-              <div class="progress-fill" style="width:${xpPercent}%"></div>
-            </div>
-          </div>
-          <div class="metric-grid">
-            <div class="card">
-              <div class="summary-label">Health</div>
-              <div class="summary-value">${calculateHp(state.character)}</div>
-              <div class="small-copy">HP ledger</div>
-            </div>
-            <div class="card">
-              <div class="summary-label">Focus</div>
-              <div class="summary-value">${calculateMp(state.character)}</div>
-              <div class="small-copy">MP ledger</div>
-            </div>
-            <div class="card">
-              <div class="summary-label">Gold</div>
-              <div class="summary-value">${state.character.gold}</div>
-              <div class="small-copy">Treasury held</div>
-            </div>
-            <div class="card">
-              <div class="summary-label">Quest Streak</div>
-              <div class="summary-value">${state.stats.questDayStreakCurrent}</div>
-              <div class="small-copy">Longest ${state.stats.questDayStreakLongest}</div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="summary-label">Primary Stats</div>
-            <div class="inline-list">
-              <span class="meta-chip">Vitality ${state.character.stats.vitality}</span>
-              <span class="meta-chip">Wisdom ${state.character.stats.wisdom}</span>
-              <span class="meta-chip">Fortune ${state.character.stats.fortune}</span>
-              <span class="meta-chip">Charisma ${state.character.stats.charisma}</span>
-            </div>
-          </div>
-        </div>
-      </article>
-      <article class="page">
-        <div class="page-title-row">
-          <div>
-            <p class="page-kicker">Campaign Pressure</p>
-            <h2 class="page-title">This Week</h2>
-            <p class="page-copy">Your week revolves around repeatable wins: ride enough, fast enough, and keep the quest board moving.</p>
-          </div>
-        </div>
-        <div class="section-stack">
-          <div class="training-card">
-            <div class="training-head">
-              <div>
-                <div class="section-label">Cycling</div>
-                <h4>${cyclingSummary.currentWeek.rideCount}/${state.training.cycling.weeklyRideTarget} qualifying rides</h4>
-              </div>
-              <span class="state-pill ${cyclingSummary.currentWeek.targetMet ? "completed" : "available"}">${cyclingSummary.currentWeek.targetMet ? "Target met" : "In progress"}</span>
-            </div>
-            <p class="training-copy">${formatDistanceKm(cyclingSummary.currentWeek.distanceKm)} this week. ${cyclingSummary.currentWeek.ridesRemaining} ride${cyclingSummary.currentWeek.ridesRemaining === 1 ? "" : "s"} to hit the count target.</p>
-          </div>
-          <div class="training-card">
-            <div class="training-head">
-              <div>
-                <div class="section-label">Fasting</div>
-                <h4>${fastingSummary.currentWeek.completedDays}/${fastingSummary.currentWeek.targetDays} target fasts</h4>
-              </div>
-              <span class="state-pill ${fastingSummary.currentWeek.targetMet ? "completed" : "available"}">${fastingSummary.streak.current} day streak</span>
-            </div>
-            <p class="training-copy">Target hours: ${state.training.fasting.targetHours}. This week is about calm consistency, not perfection.</p>
-          </div>
-          <div class="training-card">
-            <div class="training-head">
-              <div>
-                <div class="section-label">Quest Board</div>
-                <h4>${questSummary.inProgress} in progress · ${questSummary.available} available</h4>
-              </div>
-              ${questSummary.overdue ? `<span class="wax-badge overdue">${questSummary.overdue} overdue</span>` : ""}
-            </div>
-            <p class="training-copy">${questSummary.closed} quests are already recorded in the chronicle. Keep the chain moving, not just the to-do list.</p>
-          </div>
-          <div class="card">
-            <div class="section-label">Quest Chains</div>
-            ${chains.length ? chains.map(renderChainCard).join("") : `<div class="empty-state">Add a chain name to quests when you want multi-step campaigns.</div>`}
-          </div>
-        </div>
-      </article>
-    </section>
-    <section class="page-spread dashboard-support-row" style="margin-top:18px">
-      ${renderActivityPanel()}
-      ${renderFocusPanel(chains, cyclingSummary, fastingSummary)}
-    </section>
-  `;
-}
 
 function renderOverview() {
   const cyclingSummary = getCyclingSummary(state);
@@ -1098,10 +1080,6 @@ function renderOverview() {
           </div>
         </div>
       </article>
-    </section>
-    <section class="page-spread overview-secondary-row">
-      ${renderScheduledPanel()}
-      ${renderChainPanel(chains)}
     </section>
     <section class="page-spread dashboard-support-row">
       ${renderActivityPanel()}
@@ -1319,11 +1297,7 @@ function renderCyclingPanel(summary) {
             </div>
             <span class="state-pill ${strava.lastSyncStatus === "error" ? "failed" : strava.lastSyncStatus === "success" ? "completed" : "available"}">${escapeHtml(strava.lastSyncStatus)}</span>
           </div>
-          <p class="training-copy">Stored in-browser for personal use under <strong>${escapeHtml(STORAGE_KEY)}</strong>. A production multi-user version should move token exchange to a backend.</p>
-          <div class="small-copy">
-            Last sync: ${escapeHtml(strava.lastSyncAt ? formatDate(strava.lastSyncAt, { day: "numeric", month: "short", year: "numeric" }) : "never")}
-            ${strava.lastError ? `<br>${escapeHtml(strava.lastError)}` : ""}
-          </div>
+          <p class="training-copy">Last sync: ${escapeHtml(strava.lastSyncAt ? formatDate(strava.lastSyncAt, { day: "numeric", month: "short", year: "numeric" }) : "never")}${strava.lastError ? ` — ${escapeHtml(strava.lastError)}` : ""}</p>
         </div>
         <div class="card">
           <div class="section-label">Recent Rides</div>
@@ -1526,7 +1500,7 @@ function renderSettings() {
         <div class="settings-grid">
           <form class="settings-card form-shell" data-form="strava-settings">
             <div class="section-label">Strava Sync</div>
-            <div class="small-copy">For personal use right now, paste a Strava access token here. Later we can replace this with a proper backend OAuth exchange.</div>
+            <div class="small-copy">Paste a Strava access token to pull rides automatically into the cycling ledger.</div>
             <div>
               <label class="form-label" for="accessToken">Access token</label>
               <input class="text-input token-field" id="accessToken" name="accessToken" type="password" value="${safeAttr(strava.accessToken)}" autocomplete="off">
@@ -1536,7 +1510,7 @@ function renderSettings() {
               <span>Auto-sync on load when the last sync is stale.</span>
             </label>
             <div class="settings-actions">
-              <button class="primary-button" type="submit">Save Strava settings</button>
+              <button class="primary-button" type="submit">Save</button>
               <button class="secondary-button" type="button" data-action="sync-strava" ${ui.syncingStrava ? "disabled" : ""}>${ui.syncingStrava ? "Syncing..." : "Sync now"}</button>
             </div>
           </form>
@@ -1607,20 +1581,6 @@ function renderSettings() {
           </div>
         </div>
       </article>
-      <article class="page">
-        <div class="page-title-row">
-          <div>
-            <p class="page-kicker">Implementation Notes</p>
-            <h2 class="page-title">What This Build Covers</h2>
-            <p class="page-copy">This version moves the app into a cleaner web-app structure, adds chain-driven quests, and turns vitality into a cycling and fasting campaign.</p>
-          </div>
-        </div>
-        <div class="section-stack">
-          <div class="note-strip">Quest chains, bonus objectives, and in-progress or failed states are all now first-class citizens in the board.</div>
-          <div class="note-strip">Cycling is designed around real ride imports plus manual notes. Fasting stays manual for now, but the streak and weekly system is already in place.</div>
-          <div class="note-strip">The web app entry point is <strong>index.html</strong>. The old single-file prototype remains in the workspace as a legacy reference.</div>
-        </div>
-      </article>
     </section>
   `;
 }
@@ -1629,42 +1589,50 @@ function renderSidebarIcon(kind) {
   const icons = {
     overview: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M3 10.5 12 3l9 7.5"></path>
-        <path d="M5.25 9.75V21h13.5V9.75"></path>
-        <path d="M9.75 21v-5.25h4.5V21"></path>
+        <rect x="4" y="4" width="6" height="6"></rect>
+        <rect x="14" y="4" width="6" height="6"></rect>
+        <rect x="4" y="14" width="6" height="6"></rect>
+        <rect x="14" y="14" width="6" height="6"></rect>
       </svg>`,
     quests: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M7.5 4.5h9A1.5 1.5 0 0 1 18 6v12a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 18V6a1.5 1.5 0 0 1 1.5-1.5Z"></path>
-        <path d="M9 8.25h6"></path>
-        <path d="M9 12h6"></path>
-        <path d="M9 15.75h3.75"></path>
+        <path d="M8 4h8a2 2 0 0 1 2 2v14H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"></path>
+        <path d="M9.5 8.5h5"></path>
+        <path d="m9.5 13 1.5 1.5 3.5-3.5"></path>
+        <path d="M9.5 17.5h5"></path>
       </svg>`,
     cycling: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="6.75" cy="16.5" r="3"></circle>
-        <circle cx="17.25" cy="16.5" r="3"></circle>
-        <path d="m9.75 16.5 2.4-5.25h3.6"></path>
-        <path d="m10.5 8.25 1.65 3h3.35"></path>
-        <path d="M12.15 11.25 9 11.25"></path>
+        <circle cx="6.5" cy="17.5" r="3.5"></circle>
+        <circle cx="17.5" cy="17.5" r="3.5"></circle>
+        <path d="M10 17.5 13 10h4"></path>
+        <path d="m14 10 3.5 7.5"></path>
+        <path d="M8.25 10H11"></path>
+        <path d="M13 10 10 17.5"></path>
       </svg>`,
     fasting: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="12" r="8.25"></circle>
-        <path d="M12 7.5v5.25l3 1.5"></path>
+        <path d="M8 4h8"></path>
+        <path d="M8 20h8"></path>
+        <path d="M9 4c0 3 2 4.5 3 5 1-.5 3-2 3-5"></path>
+        <path d="M9 20c0-3 2-4.5 3-5 1 .5 3 2 3 5"></path>
       </svg>`,
     rewards: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M6 7.5h12v3.75H6z"></path>
-        <path d="M7.5 11.25v8.25h9v-8.25"></path>
-        <path d="M12 7.5v12"></path>
-        <path d="M12 7.5c-.9 0-3-.45-3-2.25 0-1.2.9-1.95 2.1-1.95 1.5 0 2.1 2.1 2.1 4.2Z"></path>
-        <path d="M12 7.5c.9 0 3-.45 3-2.25 0-1.2-.9-1.95-2.1-1.95-1.5 0-2.1 2.1-2.1 4.2Z"></path>
+        <path d="M5 8h14v12H5z"></path>
+        <path d="M4 10.5h16"></path>
+        <path d="M12 8v12"></path>
+        <path d="M12 8c-2.2 0-3-1.4-3-2.5A1.5 1.5 0 0 1 10.5 4C12 4 12 6 12 8Z"></path>
+        <path d="M12 8c2.2 0 3-1.4 3-2.5A1.5 1.5 0 0 0 13.5 4C12 4 12 6 12 8Z"></path>
       </svg>`,
     settings: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M12 8.25A3.75 3.75 0 1 0 12 15.75A3.75 3.75 0 1 0 12 8.25z"></path>
-        <path d="M19.5 12a7.4 7.4 0 0 0-.09-1.13l2-1.56-1.9-3.29-2.42.82a7.8 7.8 0 0 0-1.95-1.13L14.7 3h-3.4l-.44 2.71a7.8 7.8 0 0 0-1.95 1.13l-2.42-.82-1.9 3.29 2 1.56A7.4 7.4 0 0 0 4.5 12c0 .38.03.76.09 1.13l-2 1.56 1.9 3.29 2.42-.82c.6.47 1.26.85 1.95 1.13L11.3 21h3.4l.44-2.71c.69-.28 1.35-.66 1.95-1.13l2.42.82 1.9-3.29-2-1.56c.06-.37.09-.75.09-1.13Z"></path>
+        <path d="M5 6h14"></path>
+        <circle cx="9" cy="6" r="2"></circle>
+        <path d="M5 12h14"></path>
+        <circle cx="15" cy="12" r="2"></circle>
+        <path d="M5 18h14"></path>
+        <circle cx="11" cy="18" r="2"></circle>
       </svg>`
   };
 
@@ -1677,7 +1645,6 @@ function renderTabs() {
     ["quests", "Quests", "quests"],
     ["cycling", "Cycling", "cycling"],
     ["fasting", "Fasting", "fasting"],
-    ["rewards", "Rewards", "rewards"],
     ["settings", "Settings", "settings"]
   ];
 
@@ -1705,7 +1672,6 @@ function renderShellHeader() {
     quests: "Quest chains turn discipline into a campaign.",
     cycling: "Keep the ride streak and distance targets honest.",
     fasting: "Watch the streak, target hours, and ledger quality.",
-    rewards: "Rewards are trophies from the grind, not the reason for it.",
     settings: "Adjust thresholds and sync rules before the next run."
   };
 
@@ -1717,8 +1683,8 @@ function renderShellHeader() {
         <p class="tagline">${escapeHtml(shellCopy[ui.tab] || shellCopy.overview)}</p>
       </div>
       <div class="header-actions">
-        <button class="btn btn-primary" type="button" data-action="open-modal" data-modal="${ui.tab === "cycling" ? "ride" : ui.tab === "fasting" ? "fast" : ui.tab === "rewards" ? "reward" : "quest"}">
-          ${ui.tab === "cycling" ? "Log ride" : ui.tab === "fasting" ? "Log fast" : ui.tab === "rewards" ? "Add reward" : "New quest"}
+        <button class="btn btn-primary" type="button" data-action="open-modal" data-modal="${ui.tab === "cycling" ? "ride" : ui.tab === "fasting" ? "fast" : "quest"}">
+          ${ui.tab === "cycling" ? "Log ride" : ui.tab === "fasting" ? "Log fast" : "New quest"}
         </button>
       </div>
     </section>
@@ -1726,39 +1692,8 @@ function renderShellHeader() {
 }
 
 function renderGoalStatusCard({ label, value, note, ringValue, ringUnit = "", progress = 0, accentClass = "accent-cyan" }) {
-  const circumference = 163.4;
-  const clamped = Math.max(0, Math.min(progress, 100));
-  const filled = ((clamped / 100) * circumference).toFixed(1);
-  const remainder = Math.max(circumference - Number(filled), 0).toFixed(1);
-
-  return `
-    <article class="summary-card goal-status-card">
-      <div class="stat-text">
-        <div class="summary-label">${escapeHtml(label)}</div>
-        <div class="summary-value">${escapeHtml(value)}</div>
-        <div class="summary-note">${escapeHtml(note)}</div>
-      </div>
-      <div class="stat-ring-wrap">
-        <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">
-          <circle cx="32" cy="32" r="26" fill="none" class="ring-track" stroke-width="4"></circle>
-          <circle
-            cx="32"
-            cy="32"
-            r="26"
-            fill="none"
-            class="ring-progress ${accentClass}"
-            stroke-width="4"
-            stroke-dasharray="${filled} ${remainder}"
-            stroke-linecap="round"
-          ></circle>
-        </svg>
-        <div class="stat-ring-inner">
-          <span class="stat-ring-val">${escapeHtml(ringValue)}</span>
-          ${ringUnit ? `<span class="stat-ring-unit">${escapeHtml(ringUnit)}</span>` : ""}
-        </div>
-      </div>
-    </article>
-  `;
+  return renderSummaryCard({ label, value, note, ringValue, ringUnit, progress, accentClass })
+    .replace("summary-card arc-summary-card", "summary-card arc-summary-card goal-status-card");
 }
 
 function getWeeklyQuestGoalData() {
@@ -1781,22 +1716,41 @@ function getWeeklyQuestGoalData() {
 
 function renderGoalProgressCard({ label, value, note, progress = 0, segments = 1, filledSegments = 0, accentClass = "accent-cyan" }) {
   const clamped = Math.max(0, Math.min(progress, 100));
-  const totalSegments = Math.max(1, Math.round(Number(segments) || 1));
-  const filledCount = Math.max(0, Math.min(totalSegments, Math.round(Number(filledSegments) || 0)));
-  const segmentMarkup = Array.from({ length: totalSegments }, (_, index) => `
-        <span class="goal-progress-segment ${index < filledCount ? "is-filled" : ""}"></span>
-      `).join("");
+  const totalSegs = Math.max(1, Math.round(Number(segments) || 1));
+  const filledCount = Math.max(0, Math.min(totalSegs, Math.round(Number(filledSegments) || 0)));
+  const accentVar = getAccentVar(accentClass);
+
+  const vcx = 60, vcy = 56, vr = 40, vtw = 7;
+  const vticks = buildArcTicks({
+    cx: vcx,
+    cy: vcy,
+    r: vr,
+    strokeWidth: vtw,
+    totalSegments: totalSegs,
+    filledSegments: filledCount,
+    outerInset: 2,
+    innerInset: 2,
+    filledColor: "var(--bg)",
+    emptyColor: "var(--surface-3)",
+    tickWidth: 1.2
+  });
 
   return `
-    <article class="goal-progress-card ${accentClass}">
-      <div class="goal-progress-head">
-        <div class="summary-label">${escapeHtml(label)}</div>
-        <div class="goal-progress-percent">${clamped}%</div>
+    <article class="arc-goal-card ${accentClass}" style="--arc-accent:${accentVar}">
+      <div class="arc-gauge-wrap">
+        <svg viewBox="0 0 120 62" class="arc-gauge-svg" aria-hidden="true">
+          <path d="${arcGaugePath(vcx, vcy, vr, 100)}" fill="none" stroke="var(--border)" stroke-width="${vtw}" stroke-linecap="round"/>
+          ${clamped > 0 ? `<path d="${arcGaugePath(vcx, vcy, vr, clamped)}" fill="none" stroke="${accentVar}" stroke-width="${vtw}" stroke-linecap="round" class="arc-fill"/>` : ""}
+          ${vticks}
+          <circle cx="${vcx - vr}" cy="${vcy}" r="2.5" fill="var(--border-2)"/>
+          <circle cx="${vcx + vr}" cy="${vcy}" r="2.5" fill="var(--border-2)"/>
+          <text x="${vcx}" y="${vcy - 14}" text-anchor="middle" fill="${accentVar}" font-family="var(--font-mono)" font-size="14" font-weight="600" letter-spacing="-0.03em">${clamped}%</text>
+          <text x="${vcx}" y="${vcy - 3}" text-anchor="middle" fill="var(--text-3)" font-family="var(--font-mono)" font-size="5.5" letter-spacing="0.12em">${escapeHtml(label.toUpperCase())}</text>
+        </svg>
       </div>
-      <div class="goal-progress-value">${escapeHtml(value)}</div>
-      <div class="goal-progress-note">${escapeHtml(note)}</div>
-      <div class="goal-progress-bar" style="--segment-count:${totalSegments};">
-        ${segmentMarkup}
+      <div class="arc-goal-meta">
+        <div class="arc-goal-value">${escapeHtml(value)}</div>
+        <div class="arc-goal-note">${escapeHtml(note)}</div>
       </div>
     </article>
   `;
@@ -1883,7 +1837,6 @@ function renderCurrentTab() {
   if (ui.tab === "quests") return renderQuests();
   if (ui.tab === "cycling") return renderCyclingPanel(getCyclingSummary(state));
   if (ui.tab === "fasting") return renderFastingPanel(getFastingSummary(state));
-  if (ui.tab === "rewards") return renderRewards();
   if (ui.tab === "settings") return renderSettings();
   return renderOverview();
 }
