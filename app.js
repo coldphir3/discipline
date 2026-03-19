@@ -603,23 +603,23 @@ function renderMetricsStrip() {
 
   return `
     <section class="metrics-strip">
-      <article class="metric-chip">
+      <article class="metric-chip chip-level">
         <span class="metric-chip-label">Level</span>
         <span class="metric-chip-val">${getLevel(state.character.xp)}</span>
       </article>
-      <article class="metric-chip">
+      <article class="metric-chip chip-xp">
         <span class="metric-chip-label">XP</span>
         <span class="metric-chip-val">${xpIntoCurrentLevel(state.character.xp)} / ${xpForLevel(getLevel(state.character.xp))}</span>
       </article>
-      <article class="metric-chip">
-        <span class="metric-chip-label">Weekly Ride KM</span>
+      <article class="metric-chip chip-ride">
+        <span class="metric-chip-label">Weekly KM</span>
         <span class="metric-chip-val">${cyclingSummary.currentWeek.distanceKm.toFixed(1)} km</span>
       </article>
-      <article class="metric-chip">
+      <article class="metric-chip chip-fast">
         <span class="metric-chip-label">Fasting</span>
         <span class="metric-chip-val">${fastingSummary.currentWeek.completedDays}/${fastingSummary.currentWeek.targetDays} days</span>
       </article>
-      <article class="metric-chip">
+      <article class="metric-chip chip-quests">
         <span class="metric-chip-label">Quest Load</span>
         <span class="metric-chip-val">${questSummary.inProgress + questSummary.available} active</span>
       </article>
@@ -1447,12 +1447,6 @@ function renderFastingPanel(summary) {
   `;
 }
 
-function renderTraining() {
-  const cyclingSummary = getCyclingSummary(state);
-  const fastingSummary = getFastingSummary(state);
-  return `<section class="training-layout">${renderCyclingPanel(cyclingSummary)}${renderFastingPanel(fastingSummary)}</section>`;
-}
-
 function renderRewards() {
   return `
     <section class="page-spread">
@@ -1604,7 +1598,7 @@ function renderSettings() {
             <div class="small-copy">Export the full chronicle as JSON or import a previous backup.</div>
             <div class="settings-actions">
               <button class="primary-button" type="button" data-action="export-state">Export backup</button>
-              <button class="ghost-button" type="button" data-action="load-demo-state">Load demo chronicle</button>
+              <button class="ghost-button" type="button" data-action="load-demo-state">Load demo</button>
               <label class="secondary-button" style="display:inline-flex;align-items:center;justify-content:center">
                 Import backup
                 <input type="file" data-action="import-state" accept="application/json" style="display:none">
@@ -1707,12 +1701,12 @@ function renderShellHeader() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
   const shellCopy = {
-    overview: "The System rewards consistency. Keep the board moving and your momentum alive.",
-    quests: "Quest chains turn discipline into a campaign instead of a scattered grind.",
-    cycling: "Cycling has its own command surface now. Keep the ride streak and distance targets honest.",
-    fasting: "Fasting stands on its own. Watch the streak, target hours, and ledger quality.",
+    overview: "The System rewards consistency. Keep the board moving.",
+    quests: "Quest chains turn discipline into a campaign.",
+    cycling: "Keep the ride streak and distance targets honest.",
+    fasting: "Watch the streak, target hours, and ledger quality.",
     rewards: "Rewards are trophies from the grind, not the reason for it.",
-    settings: "Adjust thresholds and sync rules before the next run begins."
+    settings: "Adjust thresholds and sync rules before the next run."
   };
 
   return `
@@ -1723,7 +1717,6 @@ function renderShellHeader() {
         <p class="tagline">${escapeHtml(shellCopy[ui.tab] || shellCopy.overview)}</p>
       </div>
       <div class="header-actions">
-        <button class="btn" type="button" data-action="load-demo-state">Demo reset</button>
         <button class="btn btn-primary" type="button" data-action="open-modal" data-modal="${ui.tab === "cycling" ? "ride" : ui.tab === "fasting" ? "fast" : ui.tab === "rewards" ? "reward" : "quest"}">
           ${ui.tab === "cycling" ? "Log ride" : ui.tab === "fasting" ? "Log fast" : ui.tab === "rewards" ? "Add reward" : "New quest"}
         </button>
@@ -2148,6 +2141,7 @@ function render() {
         <main class="main">
           <section class="main-shell">
             ${renderShellHeader()}
+            ${renderMetricsStrip()}
             <div class="dashboard-content">
               ${renderCurrentTab()}
             </div>
